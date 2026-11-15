@@ -98,6 +98,8 @@ new_turnitin_highlights_*.json
 received_*.json
 
 # Secrets
+credentials.json
+client_secret*.json
 credentials/
 tokens/
 *.pem

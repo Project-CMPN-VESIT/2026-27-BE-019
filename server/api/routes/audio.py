@@ -1,3 +1,8 @@
+# Contributor: Riya Sanjay Khialani (Class D12A, Roll 34)
+# Role: Live Multimodal Audio Pipeline & Frontend Lead (30% Contribution)
+# Subsystem: Full-Duplex 16kHz Gemini Live Bidirectional WebSocket Voice Bridge
+# Project: Dione (Group 19, University of Mumbai Capstone Project I)
+
 """
 Dione AI — Live Audio & Gemini 3.8 Extended Thinking + Backend Engine Bridge
 =============================================================================
@@ -189,7 +194,31 @@ async def audio_live_session(websocket: WebSocket):
         ),
     )
 
+    from pathlib import Path
+    soul_file = Path("SOUL.md")
+    soul_text = soul_file.read_text(encoding="utf-8").strip() if soul_file.exists() else ""
+    voice_prompt = (
+        f"{soul_text}\n\n" if soul_text else ""
+    ) + (
+        "You are Dione, an executive personal AI assistant (Jarvis persona) running on the user's Windows 11 workstation. "
+        "Speak naturally, concisely, and warmly without markdown symbols or asterisks. "
+        "CRITICAL CAPABILITIES:\n"
+        "1. Whenever the user asks you to DO something on their computer, browser, files, or services "
+        "(e.g. open an app, play a video, click something, check/send email, check calendar, send a WhatsApp/Telegram/Slack message, search the web), "
+        "IMMEDIATELY call `execute_dione_action(goal=...)` and then speak the result.\n"
+        "2. Whenever the user asks a complex question that benefits from deeper reasoning, math, code architecture, or personal knowledge lookup, "
+        "call `deep_think_gemini_3_8(problem=...)` and synthesize its answer naturally."
+    )
+
     live_candidates = [
+        "models/gemini-2.5-flash-native-audio-preview-12-2025",
+        "gemini-2.5-flash-native-audio-preview-12-2025",
+        "models/gemini-2.5-flash-native-audio-preview-09-2025",
+        "gemini-2.5-flash-native-audio-preview-09-2025",
+        "models/gemini-2.0-flash-live-001",
+        "gemini-2.0-flash-live-001",
+        "models/gemini-2.0-flash-exp",
+        "gemini-2.0-flash-exp",
         "models/gemini-3.8-live-extended-thinking",
         "models/gemini-3.8-live",
         orch.config.live_frontman_model,
@@ -218,18 +247,7 @@ async def audio_live_session(websocket: WebSocket):
                     sliding_window=types.SlidingWindow(target_tokens=52428),
                 ),
                 "system_instruction": types.Content(
-                    parts=[types.Part.from_text(
-                        text=(
-                            "You are Dione, an executive personal AI assistant (Jarvis persona) running on the user's Windows 11 workstation. "
-                            "Speak naturally, concisely, and warmly without markdown symbols or asterisks. "
-                            "CRITICAL CAPABILITIES:\n"
-                            "1. Whenever the user asks you to DO something on their computer, browser, files, or services "
-                            "(e.g. open an app, play a video, click something, check/send email, check calendar, send a WhatsApp/Telegram/Slack message, search the web), "
-                            "IMMEDIATELY call `execute_dione_action(goal=...)` and then speak the result.\n"
-                            "2. Whenever the user asks a complex question that benefits from deeper reasoning, math, code architecture, or personal knowledge lookup, "
-                            "call `deep_think_gemini_3_8(problem=...)` and synthesize its answer naturally."
-                        )
-                    )]
+                    parts=[types.Part.from_text(text=voice_prompt)]
                 ),
             }
             if "thinking" in live_model.lower():
@@ -251,7 +269,10 @@ async def audio_live_session(websocket: WebSocket):
                         while True:
                             msg = await websocket.receive()
                             if "bytes" in msg and msg["bytes"]:
-                                await live_session.send(input={"data": msg["bytes"], "mime_type": "audio/pcm"})
+                                try:
+                                    await live_session.send_realtime_input(audio=types.Blob(data=msg["bytes"], mime_type="audio/pcm;rate=16000"))
+                                except Exception:
+                                    await live_session.send(input={"data": msg["bytes"], "mime_type": "audio/pcm"})
                             elif "text" in msg and msg["text"]:
                                 data = json.loads(msg["text"])
                                 mtype = data.get("type", "")
@@ -372,11 +393,6 @@ async def audio_live_session(websocket: WebSocket):
             logger.warning(f"Gemini Live model {live_model} failed: {live_err}")
             continue
 
-    if not connected_session and last_err:
-        try:
-            await websocket.send_json({
-                "type": "error",
-                "message": f"Gemini Live connection failed: {last_err}",
-            })
-        except Exception:
-            pass
+    if not connected_session:
+        logger.warning(f"All native audio live sessions failed: {last_err}. Activating Full-Duplex Hybrid Loop.")
+        await _run_full_duplex_hybrid_loop(websocket, orch, voice_name)

@@ -1,3 +1,8 @@
+# Contributor: Riya Sanjay Khialani (Class D12A, Roll 34)
+# Role: Live Multimodal Audio Pipeline & Frontend Lead (30% Contribution)
+# Subsystem: Google Workspace Cloud Integrations & Real-Time Email Plugin
+# Project: Dione (Group 19, University of Mumbai Capstone Project I)
+
 """
 Dione AI — Dual-Engine Autonomous Email Plugin
 ==============================================

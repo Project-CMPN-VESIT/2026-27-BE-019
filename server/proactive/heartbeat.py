@@ -1,3 +1,8 @@
+# Contributor: Ruchika Dingria (Class D12B, Roll 70)
+# Role: Proactive Inactive Synthesis & Quality Assurance Specialist (17% Contribution)
+# Subsystem: Adaptive Heartbeat Scheduler & Win32 Idle Workstation Loop
+# Project: Dione (Group 19, University of Mumbai Capstone Project I)
+
 """
 Dione AI — Heartbeat / Proactive Agent
 

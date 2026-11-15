@@ -1,3 +1,8 @@
+# Contributor: Riya Sanjay Khialani (Class D12A, Roll 34)
+# Role: Live Multimodal Audio Pipeline & Frontend Lead (30% Contribution)
+# Subsystem: AG-UI Server-Sent Events (SSE) Streaming & Chat Execution Protocol
+# Project: Dione (Group 19, University of Mumbai Capstone Project I)
+
 from pathlib import Path
 """
 Dione AI — Chat Routes

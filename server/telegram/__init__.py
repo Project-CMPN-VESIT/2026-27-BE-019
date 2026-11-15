@@ -4,9 +4,14 @@ Dione AI — Telegram Bot & Polling Service
 Cloud-native, zero-dependency Telegram Bot manager.
 Connects directly to Telegram Bot API using async httpx.
 Allows talking to Dione remotely from Telegram on your phone.
+
+Contributor: Riya Sanjay Khialani (Class D12A, Roll 34) & Jass Suraj Shivnani (Class D12B, Roll 50)
+Role: Remote Messaging & Multi-Channel Inbound Gateway
+Project: Dione (Group 19, University of Mumbai Capstone Project I)
 """
 
 import os
+import time
 import asyncio
 from typing import Optional, Dict, Any
 from loguru import logger
@@ -37,13 +42,16 @@ class TelegramBotService:
         self._running = False
         self._task: Optional[asyncio.Task] = None
         self._last_update_id = 0
+        self._start_time = time.time()
         self.bot_info: Dict[str, Any] = {}
 
     async def start(self) -> bool:
-        """Verify token and start background long-polling loop."""
+        """Verify token, flush offline backlog, and start background long-polling loop."""
         if not self.bot_token:
             logger.warning("TelegramBotService: No bot token configured")
             return False
+
+        self._start_time = time.time()
 
         try:
             url = f"{self.API_BASE}/bot{self.bot_token}/getMe"
@@ -54,6 +62,21 @@ class TelegramBotService:
                     return False
                 self.bot_info = resp.json().get("result", {})
                 logger.info(f"✨ Telegram Bot verified: @{self.bot_info.get('username')}")
+
+                # Flush any historical updates that arrived while server was offline
+                try:
+                    url_updates = f"{self.API_BASE}/bot{self.bot_token}/getUpdates"
+                    backlog_resp = await client.get(url_updates, params={"offset": -1, "timeout": 0})
+                    if backlog_resp.status_code == 200:
+                        results = backlog_resp.json().get("result", [])
+                        if results:
+                            last_id = results[-1].get("update_id", 0)
+                            self._last_update_id = last_id
+                            # Acknowledge up to the latest pending update to clear Telegram's server backlog
+                            await client.get(url_updates, params={"offset": last_id + 1, "timeout": 0})
+                            logger.info(f"🧹 Telegram: Discarded offline backlog up to update_id={last_id} (ignoring pre-start messages)")
+                except Exception as flush_err:
+                    logger.debug(f"Telegram backlog flush notice: {flush_err}")
 
         except Exception as e:
             logger.error(f"Telegram connection error: {e}")
@@ -127,6 +150,12 @@ class TelegramBotService:
         if self.allowed_chat_id and chat_id != self.allowed_chat_id:
             logger.warning(f"Unauthorized Telegram message from chat_id {chat_id} ({user_name})")
             await self._send_reply(chat_id, "🔒 Dione is configured for private single-user access. This chat is not authorized.")
+            return
+
+        # Timestamp check: Ignore messages sent before this server instance started
+        msg_date = message.get("date", 0)
+        if msg_date and msg_date < (self._start_time - 2):
+            logger.info(f"⏩ Telegram: Ignored stale message sent before server start (sent {msg_date} vs start {int(self._start_time)}): '{text[:30]}'")
             return
 
         logger.info(f"📱 Telegram Inbound from {user_name} ({chat_id}): {text}")

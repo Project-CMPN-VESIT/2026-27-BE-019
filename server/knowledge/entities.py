@@ -3,6 +3,10 @@ Dione AI — Entity Definitions for the Knowledge Graph
 
 Defines the types of entities (nodes) that exist in the user's
 personal knowledge graph: People, Events, Documents, Projects, etc.
+
+Contributor: Khushi Sadhuramani (Class D12B, Roll 44)
+Role: Knowledge Graph & GraphRAG Memory Specialist (18% Contribution)
+Project: Dione (Group 19, University of Mumbai Capstone Project I)
 """
 
 from dataclasses import dataclass, field
@@ -24,6 +28,15 @@ class EntityType(Enum):
     MESSAGE = "message"
     TASK = "task"
     COMMITMENT = "commitment"
+    AGENT = "agent"
+    CONCEPT = "concept"
+    TECHNOLOGY = "technology"
+    SYSTEM = "system"
+    SERVICE = "service"
+    TOOL = "tool"
+    SUBSYSTEM = "subsystem"
+    FEATURE = "feature"
+    MODULE = "module"
 
 
 @dataclass

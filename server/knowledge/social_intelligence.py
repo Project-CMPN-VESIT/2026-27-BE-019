@@ -1,3 +1,8 @@
+# Contributor: Khushi Sadhuramani (Class D12B, Roll 44)
+# Role: Knowledge Graph & GraphRAG Memory Specialist (18% Contribution)
+# Subsystem: Social Dossiers, Identity Resolution & Relational Context Mining
+# Project: Dione (Group 19, University of Mumbai Capstone Project I)
+
 """
 Dione AI — Social & Relationship Intelligence Engine
 ====================================================

@@ -13,6 +13,7 @@ interface MessageViewProps {
 export const MessageView: React.FC<MessageViewProps> = ({ message, onDecideApproval, onOpenActivity }) => {
   const isUser = message.role === 'user';
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [sleepDraftStatus, setSleepDraftStatus] = useState<string | null>(null);
 
   const handleCopy = (code: string, idx: number) => {
     navigator.clipboard.writeText(code);
@@ -162,6 +163,65 @@ export const MessageView: React.FC<MessageViewProps> = ({ message, onDecideAppro
                 onDecide={onDecideApproval}
                 status={message.approvalStatus || 'pending'}
               />
+            </div>
+          )}
+
+          {/* Sleep Mode In-Chat Briefing Action Bar */}
+          {(message as any).sleepBriefing && (
+            <div className="w-full mt-3 p-3.5 rounded-2xl bg-indigo-950/30 border border-indigo-500/30 space-y-2.5">
+              <div className="flex items-center justify-between text-xs font-mono text-indigo-300">
+                <span className="flex items-center gap-1.5 font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-indigo-400" />
+                  Autonomous Email Action Required
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  Status: {sleepDraftStatus || (message as any).sleepBriefing.status || 'pending'}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  disabled={!!sleepDraftStatus}
+                  onClick={async () => {
+                    setSleepDraftStatus('sending');
+                    try {
+                      await fetch(`/api/desktop/sleep/approve-draft?draft_id=${(message as any).sleepBriefing.draftId}&action=send`, { method: 'POST' });
+                      setSleepDraftStatus('Sent via Gmail');
+                    } catch (e) {
+                      setSleepDraftStatus('Failed to send');
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <span>✅ Approve & Send Reply</span>
+                </button>
+                <button
+                  disabled={!!sleepDraftStatus}
+                  onClick={async () => {
+                    setSleepDraftStatus('saving');
+                    try {
+                      await fetch(`/api/desktop/sleep/approve-draft?draft_id=${(message as any).sleepBriefing.draftId}&action=keep`, { method: 'POST' });
+                      setSleepDraftStatus('Saved in Gmail Drafts');
+                    } catch (e) {
+                      setSleepDraftStatus('Failed');
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <span>💾 Keep in Gmail Drafts</span>
+                </button>
+                <button
+                  disabled={!!sleepDraftStatus}
+                  onClick={async () => {
+                    setSleepDraftStatus('dismissed');
+                    try {
+                      await fetch(`/api/desktop/sleep/approve-draft?draft_id=${(message as any).sleepBriefing.draftId}&action=dismiss`, { method: 'POST' });
+                    } catch (e) {}
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 border border-white/[0.08] text-xs font-medium transition-all disabled:opacity-50"
+                >
+                  <span>❌ Dismiss</span>
+                </button>
+              </div>
             </div>
           )}
 

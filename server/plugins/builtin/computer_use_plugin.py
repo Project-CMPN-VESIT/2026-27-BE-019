@@ -1,28 +1,24 @@
 """
-Dione AI — High-Speed Native Computer-Use & Vision Grounding Plugin (v4.0 Codex / UFO2 Edition)
-===============================================================================================
-Implements state-of-the-art Computer-Using Agent (CUA) execution inspired by OpenAI Codex/CUA,
-Microsoft UFO2 (OSWorld-W), and NousResearch Hermes CUA:
-1. Strongly-typed `computer_use` signature so Gemini's function-calling schema exposes
-   `action`, `coordinate`, `element`, `text`, `keys`, `app`, `direction`, `amount`, and `duration`.
-2. Zero Base64 Context Bloat: Screen captures publish images to the UI EventBus and save to
-   `data/captures/latest_screen.jpg`, returning compact window + UIA control maps to the LLM.
-3. Set-of-Mark (SoM) + 0-100% Coordinate Grid Vision Overlay: Draws numbered interactive badges
-   and a calibrated coordinate grid onto screenshots passed to Gemini Vision (`Part.from_bytes`)
-   so visual localization achieves sub-pixel accuracy on games, browsers, and custom DirectX/Canvas UIs.
-4. Hardware Scan-Code Input & Paced Physicality:
-   - 60ms hover settle (`MOUSEEVENTF_MOVE`)
-   - 75ms click hold duration (`LEFTDOWN` -> `LEFTUP`)
-   - 120ms post-click settle
-   - Hardware keyboard scan codes (`MapVirtualKeyW`) with 50ms key hold
-5. Pre/Post Frame Change Verification: Every click/action verifies whether the screen visibly
-   transitioned and reports exact feedback to the agent loop.
+Dione AI — Native Computer-Use, UIA, Drag & Canvas Drawing Plugin (v5.0 Open-CUA Edition)
+=========================================================================================
+Integrates battle-tested desktop control primitives from:
+- `vercel-labs/agent-desktop` (`crates/windows/src/input/drag.rs` & `mouse_send.rs` & `mouse_coord.rs`):
+  Normalized-absolute `SendInput` (`0..65535` with `MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK`),
+  200ms pickup settle before and after `MOUSEEVENTF_LEFTDOWN`, 16ms interpolated `MOUSEEVENTF_MOVE`
+  steps, destination dwell, and an unconditional `DragReleaseGuard` (`try...finally` button release).
+- `suitedaces/computer-agent` (`src-tauri/src/computer.rs`):
+  First-class `computer_drag` (`start_x, start_y -> end_x, end_y`), `computer_move`, `middle_click`,
+  `triple_click`, and continuous multi-point path/shape drawing (`computer_draw_shape`).
+- `qwenlm/open-computer-use` (`apps/OpenComputerUseWindows/runtime.ps1`):
+  Semantic UIA pattern execution (`InvokePattern`, `TogglePattern`, `ValuePattern`, `SelectionItemPattern`)
+  via `computer_uia_action` alongside Set-of-Mark (SoM) + 10% Coordinate Grid Gemini Vision grounding.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import ctypes
 import hashlib
 import io
 import json
@@ -49,13 +45,53 @@ CHROME_EXE = Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
 EDGE_EXE = Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe")
 RIOT_EXE = Path(r"C:\Riot Games\Riot Client\RiotClientServices.exe")
 
+# Win32 SendInput Mouse Flags (ported from vercel-labs/agent-desktop crates/windows/src/input/mouse/mouse_send.rs)
+MOUSEEVENTF_MOVE = 0x0001
+MOUSEEVENTF_LEFTDOWN = 0x0002
+MOUSEEVENTF_LEFTUP = 0x0004
+MOUSEEVENTF_RIGHTDOWN = 0x0008
+MOUSEEVENTF_RIGHTUP = 0x0010
+MOUSEEVENTF_MIDDLEDOWN = 0x0020
+MOUSEEVENTF_MIDDLEUP = 0x0040
+MOUSEEVENTF_WHEEL = 0x0800
+MOUSEEVENTF_HWHEEL = 0x1000
+MOUSEEVENTF_VIRTUALDESK = 0x4000
+MOUSEEVENTF_ABSOLUTE = 0x8000
+INPUT_MOUSE = 0
+
+
+class _MOUSEINPUT(ctypes.Structure):
+    _fields_ = [
+        ("dx", ctypes.c_long),
+        ("dy", ctypes.c_long),
+        ("mouseData", ctypes.c_ulong),
+        ("dwFlags", ctypes.c_ulong),
+        ("time", ctypes.c_ulong),
+        ("dwExtraInfo", ctypes.c_size_t),
+    ]
+
+
+class _INPUT_UNION(ctypes.Union):
+    _fields_ = [("mi", _MOUSEINPUT)]
+
+
+class _INPUT(ctypes.Structure):
+    _fields_ = [
+        ("type", ctypes.c_ulong),
+        ("union", _INPUT_UNION),
+    ]
+
 
 class ComputerUsePlugin(BasePlugin):
-    """High-Precision Windows 11 Computer-Use, UIA, Set-of-Mark & Multimodal Vision Plugin."""
+    """High-Precision Windows 11 Computer-Use, Drag/Draw, UIA & Multimodal Vision Plugin."""
 
     name = "ComputerUsePlugin"
-    description = "Control the Windows 11 desktop: inspect screen with Set-of-Mark Vision/UIA, click elements or coordinates, type text, press shortcuts, launch apps, and play media."
-    version = "4.0.0"
+    description = (
+        "Control the Windows 11 desktop: click elements or coordinates, drag and drop, "
+        "draw shapes/circles/paths in MS Paint or canvases, type text, press shortcuts, "
+        "inspect screen with Set-of-Mark Vision/UIA, launch apps, and play media."
+    )
+    version = "5.0.0"
 
     def __init__(self):
         super().__init__()
@@ -64,13 +100,12 @@ class ComputerUsePlugin(BasePlugin):
         self._captures_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
-    # Low-Level Win32 Primitives (Hardware Scan Codes & Paced Physicality)
+    # Low-Level Win32 SendInput Primitives (vercel-labs/agent-desktop port)
     # ------------------------------------------------------------------
 
     def _bind_interactive_desktop(self):
         """Ensure thread is attached to interactive WinSta0/default desktop with Per-Monitor DPI awareness."""
         try:
-            import ctypes
             if hasattr(ctypes, "windll"):
                 try:
                     ctypes.windll.shcore.SetProcessDpiAwareness(2)
@@ -89,9 +124,60 @@ class ComputerUsePlugin(BasePlugin):
         except Exception:
             pass
 
+    def _get_screen_metrics(self) -> Tuple[int, int]:
+        if not hasattr(ctypes, "windll"):
+            return (1920, 1080)
+        u32 = ctypes.windll.user32
+        return (u32.GetSystemMetrics(0) or 1920, u32.GetSystemMetrics(1) or 1080)
+
+    def _normalize_point(self, x: float, y: float) -> Tuple[int, int, bool]:
+        """
+        Ported from `vercel-labs/agent-desktop` (`mouse_coord.rs`):
+        Converts physical pixel (x, y) into 0..65535 normalized SendInput coordinates.
+        """
+        if not hasattr(ctypes, "windll"):
+            return (int(x), int(y), False)
+        u32 = ctypes.windll.user32
+        pw, ph = u32.GetSystemMetrics(0) or 1920, u32.GetSystemMetrics(1) or 1080
+        if 0 <= x < pw and 0 <= y < ph:
+            nx = int(round((x * 65535.0) / max(1, pw - 1)))
+            ny = int(round((y * 65535.0) / max(1, ph - 1)))
+            return (max(0, min(65535, nx)), max(0, min(65535, ny)), False)
+        vx = u32.GetSystemMetrics(76) or 0
+        vy = u32.GetSystemMetrics(77) or 0
+        vw = u32.GetSystemMetrics(78) or pw
+        vh = u32.GetSystemMetrics(79) or ph
+        nx = int(round(((x - vx) * 65535.0) / max(1, vw - 1)))
+        ny = int(round(((y - vy) * 65535.0) / max(1, vh - 1)))
+        return (max(0, min(65535, nx)), max(0, min(65535, ny)), True)
+
+    def _post_sendinput_mouse(self, dx: int, dy: int, flags: int, mouse_data: int = 0) -> None:
+        """Dispatches a raw Win32 SendInput MOUSEINPUT struct (plus SetCursorPos sync)."""
+        if not hasattr(ctypes, "windll"):
+            return
+        u32 = ctypes.windll.user32
+        inp = _INPUT()
+        inp.type = INPUT_MOUSE
+        inp.union.mi.dx = int(dx)
+        inp.union.mi.dy = int(dy)
+        inp.union.mi.mouseData = int(mouse_data) & 0xFFFFFFFF
+        inp.union.mi.dwFlags = int(flags)
+        inp.union.mi.time = 0
+        inp.union.mi.dwExtraInfo = 0
+        u32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(_INPUT))
+
+    def _move_cursor_smooth(self, x: int, y: int) -> None:
+        """Moves cursor to (x, y) using both SetCursorPos and normalized SendInput MOUSEEVENTF_MOVE."""
+        if not hasattr(ctypes, "windll"):
+            return
+        u32 = ctypes.windll.user32
+        u32.SetCursorPos(int(x), int(y))
+        nx, ny, is_vdesk = self._normalize_point(x, y)
+        flags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | (MOUSEEVENTF_VIRTUALDESK if is_vdesk else 0)
+        self._post_sendinput_mouse(nx, ny, flags)
+
     def _send_native_win32_key(self, key_str: str) -> bool:
         """Direct Win32 keybd_event with hardware scan codes (MapVirtualKeyW) and 50ms hold duration."""
-        import ctypes
         if not hasattr(ctypes, "windll"):
             return False
         self._bind_interactive_desktop()
@@ -104,7 +190,7 @@ class ComputerUsePlugin(BasePlugin):
             "enter": 0x0D, "return": 0x0D, "esc": 0x1B, "escape": 0x1B, "space": 0x20,
             "tab": 0x09, "backspace": 0x08, "delete": 0x2E, "del": 0x2E,
             "ctrl": 0x11, "control": 0x11, "shift": 0x10, "alt": 0x12,
-            "win": 0x5B, "windows": 0x5B,
+            "win": 0x5B, "windows": 0x5B, "super": 0x5B, "cmd": 0x5B,
             "up": 0x26, "down": 0x28, "left": 0x25, "right": 0x27,
             "home": 0x24, "end": 0x23, "pageup": 0x21, "pagedown": 0x22,
             "volup": 0xAF, "voldown": 0xAE, "mute": 0xAD, "playpause": 0xB3,
@@ -133,136 +219,291 @@ class ComputerUsePlugin(BasePlugin):
         time.sleep(0.05)
         return True
 
-    def _click_native_win32(self, x: int, y: int, double: bool = False, right: bool = False) -> bool:
+    def _click_native_win32(self, x: int, y: int, double: bool = False, right: bool = False, middle: bool = False, count: int = 1) -> bool:
         """
-        Direct Win32 SetCursorPos + mouse_event execution with:
-        - Smooth 2-step cursor approach + MOUSEEVENTF_MOVE hover trigger
-        - 60ms hover settle delay (critical for Chromium/Electron/DirectX/Riot Client buttons)
-        - 75ms mouse hold duration between DOWN and UP
-        - 120ms post-click settle delay
+        Direct Win32 SendInput + mouse_event click with ClickReleaseGuard (`try...finally`),
+        60ms hover settle, and 75ms hold duration.
         """
-        import ctypes
         if not hasattr(ctypes, "windll"):
             return False
         self._bind_interactive_desktop()
-        user32 = ctypes.windll.user32
-        MOUSEEVENTF_MOVE = 0x0001
-        MOUSEEVENTF_LEFTDOWN = 0x0002
-        MOUSEEVENTF_LEFTUP = 0x0004
-        MOUSEEVENTF_RIGHTDOWN = 0x0008
-        MOUSEEVENTF_RIGHTUP = 0x0010
 
         tx, ty = int(x), int(y)
-        # 1. Move cursor slightly near target then onto exact target so DirectInput/Chromium registers mouse-enter
-        user32.SetCursorPos(max(0, tx - 3), max(0, ty - 3))
-        user32.mouse_event(MOUSEEVENTF_MOVE, 0, 0, 0, 0)
+        self._move_cursor_smooth(max(0, tx - 3), max(0, ty - 3))
         time.sleep(0.015)
-        user32.SetCursorPos(tx, ty)
-        user32.mouse_event(MOUSEEVENTF_MOVE, 0, 0, 0, 0)
+        self._move_cursor_smooth(tx, ty)
         time.sleep(0.06)  # 60ms hover settle
 
-        # 2. Perform click with deliberate 75ms hold duration
         if right:
-            user32.mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
-            time.sleep(0.075)
-            user32.mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
+            down_flag, up_flag = MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP
+        elif middle:
+            down_flag, up_flag = MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP
         else:
-            user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-            time.sleep(0.075)
-            user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-            if double:
-                time.sleep(0.10)
-                user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                time.sleep(0.075)
-                user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+            down_flag, up_flag = MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP
 
-        # 3. 120ms post-click settle delay
+        clicks = 2 if double else max(1, int(count))
+        for i in range(clicks):
+            armed = True
+            try:
+                self._post_sendinput_mouse(0, 0, down_flag)
+                time.sleep(0.075)  # 75ms hold duration
+                self._post_sendinput_mouse(0, 0, up_flag)
+                armed = False
+            finally:
+                if armed:
+                    self._post_sendinput_mouse(0, 0, up_flag)
+            if i + 1 < clicks:
+                time.sleep(0.09)
+
         time.sleep(0.12)
         return True
 
-    def _drag_native_win32(self, start_x: int, start_y: int, end_x: int, end_y: int, steps: int = 25) -> bool:
-        """Perform a smooth native Win32 mouse drag from (start_x, start_y) to (end_x, end_y)."""
-        import ctypes
+    def _glide_cursor_win32(self, target_x: int, target_y: int, duration_s: float = 0.35) -> None:
+        """Smoothly glides the cursor to (target_x, target_y) using a smoothstep curve."""
         if not hasattr(ctypes, "windll"):
-            return False
-        self._bind_interactive_desktop()
+            return
         user32 = ctypes.windll.user32
-        MOUSEEVENTF_MOVE = 0x0001
-        MOUSEEVENTF_LEFTDOWN = 0x0002
-        MOUSEEVENTF_LEFTUP = 0x0004
+        class POINT(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+        cur = POINT()
+        user32.GetCursorPos(ctypes.byref(cur))
+        start_x, start_y = cur.x, cur.y
 
-        # 1. Move to start position and hover
-        user32.SetCursorPos(int(start_x), int(start_y))
-        user32.mouse_event(MOUSEEVENTF_MOVE, 0, 0, 0, 0)
-        time.sleep(0.06)
-
-        # 2. Press left mouse button down
-        user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-        time.sleep(0.04)
-
-        # 3. Interpolate movement
+        steps = max(15, int(duration_s * 60))
         for i in range(1, steps + 1):
-            curr_x = int(start_x + (end_x - start_x) * (i / steps))
-            curr_y = int(start_y + (end_y - start_y) * (i / steps))
-            user32.SetCursorPos(curr_x, curr_y)
-            user32.mouse_event(MOUSEEVENTF_MOVE, 0, 0, 0, 0)
-            time.sleep(0.012)
+            t = i / float(steps)
+            t_smooth = t * t * (3.0 - 2.0 * t)
+            nx = int(start_x + (target_x - start_x) * t_smooth)
+            ny = int(start_y + (target_y - start_y) * t_smooth)
+            user32.SetCursorPos(nx, ny)
+            user32.mouse_event(0x0001, 0, 0, 0, 0)
+            time.sleep(duration_s / steps)
 
-        # 4. Release left mouse button
-        time.sleep(0.04)
-        user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-        time.sleep(0.08)
-        return True
-
-    def _draw_circle_native_win32(self, center_x: int, center_y: int, radius: int = 80, steps: int = 40) -> bool:
-        """Physically draw a circle on screen (e.g. in Paint canvas) by dragging mouse along circumference."""
+    def _select_paint_ribbon_shape_tool(self, shape_type: str) -> bool:
+        """
+        Initializes COM on worker thread via CoInitialize, locates the MS Paint Ribbon shape button
+        (Oval, Rectangle, Triangle, Five-point star, Heart, Diamond, Right arrow, Line) and clicks it.
+        """
         import ctypes
-        if not hasattr(ctypes, "windll"):
-            return False
-        self._bind_interactive_desktop()
-        user32 = ctypes.windll.user32
-        MOUSEEVENTF_MOVE = 0x0001
-        MOUSEEVENTF_LEFTDOWN = 0x0002
-        MOUSEEVENTF_LEFTUP = 0x0004
+        if hasattr(ctypes, "windll"):
+            try:
+                ctypes.windll.ole32.CoInitialize(None)
+            except Exception:
+                pass
 
-        # Start at 0 radians: (center_x + radius, center_y)
-        start_x = int(center_x + radius)
-        start_y = int(center_y)
-        user32.SetCursorPos(start_x, start_y)
-        user32.mouse_event(MOUSEEVENTF_MOVE, 0, 0, 0, 0)
-        time.sleep(0.08)
+        st = shape_type.strip().lower()
+        SHAPE_TOOL_MAP = {
+            "circle": ["oval", "circle", "ellipse"],
+            "oval": ["oval", "circle", "ellipse"],
+            "ring": ["oval", "circle", "ellipse"],
+            "square": ["rectangle", "square"],
+            "rectangle": ["rectangle", "square"],
+            "box": ["rectangle", "square"],
+            "triangle": ["triangle"],
+            "star": ["five-point star", "star"],
+            "heart": ["heart"],
+            "diamond": ["diamond"],
+            "arrow": ["right arrow", "arrow"],
+            "line": ["line"],
+        }
+        target_names = SHAPE_TOOL_MAP.get(st, [st])
 
-        # Mouse down
-        user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-        time.sleep(0.05)
-
-        # Trace circumference (2 * pi)
-        for i in range(1, steps + 1):
-            angle = (2.0 * math.pi * i) / steps
-            px = int(center_x + radius * math.cos(angle))
-            py = int(center_y + radius * math.sin(angle))
-            user32.SetCursorPos(px, py)
-            user32.mouse_event(MOUSEEVENTF_MOVE, 0, 0, 0, 0)
-            time.sleep(0.015)
-
-        time.sleep(0.05)
-        user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-        time.sleep(0.08)
-        return True
-
-    def _get_screen_metrics(self) -> Tuple[int, int]:
         try:
-            import ctypes
-            if hasattr(ctypes, "windll"):
-                return (ctypes.windll.user32.GetSystemMetrics(0), ctypes.windll.user32.GetSystemMetrics(1))
+            import uiautomation as auto
+            fg = auto.GetForegroundControl()
+            if fg:
+                found_ctrl = None
+                def _walk(ctrl, depth=0):
+                    nonlocal found_ctrl
+                    if depth > 9 or found_ctrl is not None:
+                        return
+                    try:
+                        name = (ctrl.Name or "").lower().strip()
+                        c_type = ctrl.ControlTypeName
+                        if c_type in ("ButtonControl", "RadioButtonControl", "ListItemControl", "MenuItemControl"):
+                            for tn in target_names:
+                                if tn == name or tn in name:
+                                    found_ctrl = ctrl
+                                    return
+                        for ch in ctrl.GetChildren():
+                            _walk(ch, depth + 1)
+                    except Exception:
+                        pass
+
+                _walk(fg, 0)
+                if found_ctrl:
+                    rect = found_ctrl.BoundingRectangle
+                    if rect and rect.width() > 0:
+                        click_x = (rect.left + rect.right) // 2
+                        click_y = (rect.top + rect.bottom) // 2
+                        self._click_native_win32(click_x, click_y)
+                        time.sleep(0.20)
+                        logger.info(f"[PaintRibbon] Successfully selected shape tool '{found_ctrl.Name}' at ({click_x}, {click_y})")
+                        return True
+        except Exception as e:
+            logger.debug(f"[PaintRibbon] UIA shape search notice: {e}")
+
+        return False
+
+    def _drag_native_win32_path(
+        self,
+        points: List[Tuple[int, int]],
+        step_delay_s: float = 0.014,
+        button: str = "left",
+    ) -> bool:
+        """
+        Executes a continuous mouse drag along a sequence of (x, y) points with:
+        - 150ms pickup settle at origin before pressing mouse button
+        - 150ms post-press settle so MS Paint / canvases / Chromium register drag start
+        - Dual SendInput MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK
+          and relative mouse_event(MOUSEEVENTF_MOVE, dx, dy) so Windows 11 MS Paint registers the stroke
+        - Destination dwell settle (100ms) before releasing button
+        - DragReleaseGuard (try...finally) guaranteeing the mouse button is ALWAYS released.
+        """
+        if not points or len(points) < 2 or not hasattr(ctypes, "windll"):
+            return False
+        self._bind_interactive_desktop()
+        user32 = ctypes.windll.user32
+
+        btn = (button or "left").lower()
+        if btn == "right":
+            down_flag, up_flag = MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP
+        elif btn == "middle":
+            down_flag, up_flag = MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP
+        else:
+            down_flag, up_flag = MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP
+
+        sw, sh = self._get_screen_metrics()
+
+        x0, y0 = int(points[0][0]), int(points[0][1])
+        self._glide_cursor_win32(x0, y0, duration_s=0.25)
+        user32.SetCursorPos(x0, y0)
+        time.sleep(0.12)
+
+        armed = True
+        try:
+            user32.mouse_event(down_flag, 0, 0, 0, 0)
+            self._post_sendinput_mouse(0, 0, down_flag)
+            time.sleep(0.12)
+
+            prev_x, prev_y = x0, y0
+            for px, py in points[1:]:
+                cx, cy = int(px), int(py)
+                dx = cx - prev_x
+                dy = cy - prev_y
+                prev_x, prev_y = cx, cy
+
+                user32.SetCursorPos(cx, cy)
+                user32.mouse_event(0x0001, dx, dy, 0, 0)
+                norm_x = int(cx * 65535 / max(1, sw))
+                norm_y = int(cy * 65535 / max(1, sh))
+                self._post_sendinput_mouse(norm_x, norm_y, 0x0001 | 0x8000 | 0x4000)
+                time.sleep(max(0.005, float(step_delay_s)))
+
+            time.sleep(0.10)
+            user32.mouse_event(up_flag, 0, 0, 0, 0)
+            self._post_sendinput_mouse(0, 0, up_flag)
+            armed = False
+        finally:
+            if armed:
+                user32.mouse_event(up_flag, 0, 0, 0, 0)
+                self._post_sendinput_mouse(0, 0, up_flag)
+
+        time.sleep(0.12)
+        return True
+
+    def _list_native_win32_windows(self) -> List[Dict[str, Any]]:
+        """Direct Win32 EnumWindows discovery with foreground flag and window rect."""
+        if not hasattr(ctypes, "windll"):
+            return []
+        user32 = ctypes.windll.user32
+        fg_hwnd = user32.GetForegroundWindow()
+        windows = []
+
+        class RECT(ctypes.Structure):
+            _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long), ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+        def enum_cb(hwnd, lparam):
+            if user32.IsWindowVisible(hwnd):
+                length = user32.GetWindowTextLengthW(hwnd)
+                if length > 0:
+                    buff = ctypes.create_unicode_buffer(length + 1)
+                    user32.GetWindowTextW(hwnd, buff, length + 1)
+                    title = buff.value.strip()
+                    if title and title not in ("Program Manager", "Default IME", "MSCTFIME UI"):
+                        pid = ctypes.c_ulong()
+                        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                        r = RECT()
+                        rect_list = [0, 0, 1920, 1080]
+                        if user32.GetWindowRect(hwnd, ctypes.byref(r)):
+                            rect_list = [r.left, r.top, r.right, r.bottom]
+                        windows.append({
+                            "hwnd": hwnd,
+                            "title": title,
+                            "pid": pid.value,
+                            "active": (hwnd == fg_hwnd),
+                            "rect": rect_list,
+                        })
+            return True
+
+        user32.EnumWindows.argtypes = None
+        proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)(enum_cb)
+        user32.EnumWindows(proc, 0)
+        return windows
+
+    def _focus_window_by_keyword(self, keyword: str, maximize: bool = False) -> Optional[Dict[str, Any]]:
+        """Bring a visible window matching keyword to foreground focus via Win32."""
+        if not hasattr(ctypes, "windll"):
+            return None
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        kw_low = keyword.lower().strip()
+        alias_map = {
+            "mspaint": ["paint", "mspaint"],
+            "paint": ["paint", "mspaint"],
+            "calc": ["calculator", "calc"],
+            "code": ["visual studio code", "vs code", "code"],
+            "valorant": ["valorant", "riot client"],
+        }
+        search_terms = alias_map.get(kw_low, [kw_low])
+
+        windows = self._list_native_win32_windows()
+        target = None
+        for term in search_terms:
+            target = next((w for w in windows if term in w["title"].lower() and "dione" not in w["title"].lower()), None)
+            if target:
+                break
+        if not target:
+            return None
+
+        hwnd = target["hwnd"]
+        try:
+            user32.AllowSetForegroundWindow(-1)
+            if user32.IsIconic(hwnd):
+                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            if maximize:
+                user32.ShowWindow(hwnd, 3)  # SW_MAXIMIZE
+            fg_hwnd = user32.GetForegroundWindow()
+            fg_thread = user32.GetWindowThreadProcessId(fg_hwnd, None) if fg_hwnd else 0
+            cur_thread = kernel32.GetCurrentThreadId()
+            if fg_thread and fg_thread != cur_thread:
+                user32.AttachThreadInput(cur_thread, fg_thread, True)
+                user32.SetForegroundWindow(hwnd)
+                user32.BringWindowToTop(hwnd)
+                user32.SetFocus(hwnd)
+                user32.AttachThreadInput(cur_thread, fg_thread, False)
+            else:
+                user32.SetForegroundWindow(hwnd)
+                user32.BringWindowToTop(hwnd)
+                user32.SetFocus(hwnd)
         except Exception:
             pass
-        return (1920, 1080)
+        return target
 
     def _find_paint_canvas_bounds(self) -> Tuple[int, int, int, int]:
         """
         Finds the exact MS Paint / drawing canvas rectangle on screen via Windows UIA
-        or active window geometry (excluding the top 170px Ribbon/toolbar).
+        or active window geometry (excluding the top 160px Ribbon/toolbar).
         Returns (left, top, right, bottom).
         """
         sw, sh = self._get_screen_metrics()
@@ -270,12 +511,14 @@ class ComputerUsePlugin(BasePlugin):
             import uiautomation as auto
             fg = auto.GetForegroundControl()
             if fg:
+                # Look for MS Paint canvas pane / Custom / Image control
                 def _find_canvas(ctrl, depth: int = 0):
                     if depth > 6:
                         return None
                     try:
                         name = (ctrl.Name or "").lower()
                         cls = (ctrl.ClassName or "").lower()
+                        ctype = ctrl.ControlTypeName
                         rect = ctrl.BoundingRectangle
                         if rect and rect.width() > 250 and rect.height() > 200:
                             if any(k in name for k in ("canvas", "image", "drawing", "page")) or any(
@@ -294,6 +537,7 @@ class ComputerUsePlugin(BasePlugin):
                 if canvas_rect:
                     return canvas_rect
 
+                # Fallback to foreground window rect minus top 170px toolbar
                 wrect = fg.BoundingRectangle
                 if wrect and wrect.width() > 300 and wrect.height() > 250:
                     return (
@@ -305,120 +549,8 @@ class ComputerUsePlugin(BasePlugin):
         except Exception:
             pass
 
+        # Safe screen center canvas bounds below top toolbars
         return (int(sw * 0.15), int(sh * 0.22), int(sw * 0.85), int(sh * 0.85))
-
-    def _drag_native_win32_path(
-        self,
-        points: List[Tuple[int, int]],
-        step_delay_s: float = 0.012,
-        button: str = "left",
-    ) -> bool:
-        """
-        Executes a continuous mouse drag along a sequence of (x, y) points with
-        cursor settle, down-hold, smooth interpolation, and guaranteed release.
-        """
-        import ctypes
-        if not points or len(points) < 2 or not hasattr(ctypes, "windll"):
-            return False
-        self._bind_interactive_desktop()
-        user32 = ctypes.windll.user32
-        MOUSEEVENTF_MOVE = 0x0001
-        MOUSEEVENTF_LEFTDOWN = 0x0002
-        MOUSEEVENTF_LEFTUP = 0x0004
-        MOUSEEVENTF_RIGHTDOWN = 0x0008
-        MOUSEEVENTF_RIGHTUP = 0x0010
-
-        btn = (button or "left").lower()
-        down_flag = MOUSEEVENTF_RIGHTDOWN if btn == "right" else MOUSEEVENTF_LEFTDOWN
-        up_flag = MOUSEEVENTF_RIGHTUP if btn == "right" else MOUSEEVENTF_LEFTUP
-
-        x0, y0 = int(points[0][0]), int(points[0][1])
-        user32.SetCursorPos(x0, y0)
-        user32.mouse_event(MOUSEEVENTF_MOVE, 0, 0, 0, 0)
-        time.sleep(0.08)
-
-        try:
-            user32.mouse_event(down_flag, 0, 0, 0, 0)
-            time.sleep(0.06)
-
-            for px, py in points[1:]:
-                user32.SetCursorPos(int(px), int(py))
-                user32.mouse_event(MOUSEEVENTF_MOVE, 0, 0, 0, 0)
-                time.sleep(max(0.005, float(step_delay_s)))
-
-            time.sleep(0.05)
-        finally:
-            user32.mouse_event(up_flag, 0, 0, 0, 0)
-            time.sleep(0.08)
-
-        return True
-
-    def _list_native_win32_windows(self) -> List[Dict[str, Any]]:
-        """Direct Win32 EnumWindows discovery with foreground flag."""
-        import ctypes
-        if not hasattr(ctypes, "windll"):
-            return []
-        user32 = ctypes.windll.user32
-        fg_hwnd = user32.GetForegroundWindow()
-        windows = []
-
-        def enum_cb(hwnd, lparam):
-            if user32.IsWindowVisible(hwnd):
-                length = user32.GetWindowTextLengthW(hwnd)
-                if length > 0:
-                    buff = ctypes.create_unicode_buffer(length + 1)
-                    user32.GetWindowTextW(hwnd, buff, length + 1)
-                    title = buff.value.strip()
-                    if title and title not in ("Program Manager", "Default IME", "MSCTFIME UI"):
-                        pid = ctypes.c_ulong()
-                        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-                        windows.append({
-                            "hwnd": hwnd,
-                            "title": title,
-                            "pid": pid.value,
-                            "active": (hwnd == fg_hwnd),
-                        })
-            return True
-
-        user32.EnumWindows.argtypes = None
-        proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)(enum_cb)
-        user32.EnumWindows(proc, 0)
-        return windows
-
-    def _focus_window_by_keyword(self, keyword: str) -> Optional[Dict[str, Any]]:
-        """Bring a visible window matching keyword to foreground focus via Win32."""
-        import ctypes
-        if not hasattr(ctypes, "windll"):
-            return None
-        user32 = ctypes.windll.user32
-        kernel32 = ctypes.windll.kernel32
-        kw_low = keyword.lower().strip()
-        windows = self._list_native_win32_windows()
-        target = next((w for w in windows if kw_low in w["title"].lower()), None)
-        if not target:
-            return None
-
-        hwnd = target["hwnd"]
-        try:
-            user32.AllowSetForegroundWindow(-1)
-            if user32.IsIconic(hwnd):
-                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-            fg_hwnd = user32.GetForegroundWindow()
-            fg_thread = user32.GetWindowThreadProcessId(fg_hwnd, None) if fg_hwnd else 0
-            cur_thread = kernel32.GetCurrentThreadId()
-            if fg_thread and fg_thread != cur_thread:
-                user32.AttachThreadInput(cur_thread, fg_thread, True)
-                user32.SetForegroundWindow(hwnd)
-                user32.BringWindowToTop(hwnd)
-                user32.SetFocus(hwnd)
-                user32.AttachThreadInput(cur_thread, fg_thread, False)
-            else:
-                user32.SetForegroundWindow(hwnd)
-                user32.BringWindowToTop(hwnd)
-                user32.SetFocus(hwnd)
-        except Exception:
-            pass
-        return target
 
     def _extract_active_uia_elements(self, max_elements: int = 45) -> List[Dict[str, Any]]:
         """Fast recursive depth-6 extraction of interactive UIA controls in the foreground window."""
@@ -477,7 +609,6 @@ class ComputerUsePlugin(BasePlugin):
         draw = ImageDraw.Draw(annotated)
         w, h = annotated.size
 
-        # 1. Draw subtle 10% coordinate grid lines and edge percentage labels
         for pct in range(10, 100, 10):
             gx = int(w * pct / 100.0)
             gy = int(h * pct / 100.0)
@@ -488,7 +619,6 @@ class ComputerUsePlugin(BasePlugin):
             draw.rectangle([(2, gy - 8), (34, gy + 8)], fill=(10, 14, 26))
             draw.text((4, gy - 6), f"{pct}%", fill=(0, 230, 255))
 
-        # 2. Draw Set-of-Mark (SoM) numbered badges on discovered UIA controls
         for ctrl in uia_controls[:35]:
             b = ctrl.get("bounds")
             cid = ctrl.get("id")
@@ -517,7 +647,6 @@ class ComputerUsePlugin(BasePlugin):
         save_path.write_bytes(jpg_bytes)
         b64_str = base64.b64encode(jpg_bytes).decode("ascii")
 
-        # Compute fast 32x32 perceptual hash for state-transition detection
         thumb = img.resize((32, 32)).convert("L")
         frame_hash = hashlib.sha256(thumb.tobytes()).hexdigest()[:16]
 
@@ -562,8 +691,227 @@ class ComputerUsePlugin(BasePlugin):
         }
 
     # ------------------------------------------------------------------
-    # First-Class Agent Tools (Clean, Non-Overlapping, Strongly Typed)
+    # First-Class Agent Tools (Strongly Typed, Complete Action Space)
     # ------------------------------------------------------------------
+
+    @dione_tool(
+        description=(
+            "Draw a geometric shape or freehand path directly onto MS Paint (`mspaint`), a drawing canvas, or whiteboard! "
+            "Automatically launches/focuses Paint (if not already open), finds the active canvas area below the ribbon, "
+            "and smoothly drags the mouse cursor with the left button held down to draw the shape.\n"
+            ":param shape: Shape to draw: 'circle', 'square', 'rectangle', 'triangle', 'star', 'heart', 'smiley', 'spiral', 'line', or 'custom'\n"
+            ":param center_x: Optional center X pixel coordinate (auto-detected inside canvas if omitted)\n"
+            ":param center_y: Optional center Y pixel coordinate (auto-detected inside canvas if omitted)\n"
+            ":param radius: Radius in pixels for circle/star/heart/smiley/spiral (default 130)\n"
+            ":param app: Target drawing application to focus/launch (default 'mspaint')"
+        ),
+        permission_level="execute",
+        requires_confirmation=False,
+    )
+    async def computer_draw_shape(
+        self,
+        shape: str = "circle",
+        center_x: Optional[int] = None,
+        center_y: Optional[int] = None,
+        radius: int = 130,
+        app: str = "mspaint",
+    ) -> str:
+        """
+        Draws a clean, visible shape (circle, square, triangle, star, heart, smiley, spiral, line)
+        on MS Paint or the active canvas using smooth multi-step SendInput drag synthesis.
+        """
+        # 1. Minimize Dione so it never blocks the Paint canvas!
+        try:
+            from server.core.runtime.computer_use import get_computer_use_operator
+            get_computer_use_operator().minimize_dione()
+        except Exception:
+            pass
+
+        # 2. Ensure target app (e.g. Paint) is open, focused, and maximized
+        target_app = (app or "mspaint").strip().lower()
+        focused = self._focus_window_by_keyword(target_app, maximize=True)
+        if not focused:
+            await self.launch_app(target_app)
+            await asyncio.sleep(1.0)
+            focused = self._focus_window_by_keyword(target_app, maximize=True)
+        await asyncio.sleep(0.5)
+
+        # 3. Determine safe canvas bounds and center point (guarding against LLM passing 0 or Ribbon coordinates)
+        c_left, c_top, c_right, c_bottom = self._find_paint_canvas_bounds()
+        cx = int(center_x) if (center_x is not None and int(center_x) > c_left + 40) else int((c_left + c_right) // 2)
+        cy = int(center_y) if (center_y is not None and int(center_y) > c_top + 40) else int((c_top + c_bottom) // 2)
+        cx = max(c_left + 80, min(cx, c_right - 80))
+        cy = max(c_top + 80, min(cy, c_bottom - 80))
+        max_r = max(40, min(int(radius or 130), (c_right - c_left) // 3, (c_bottom - c_top) // 3))
+
+        s_type = (shape or "circle").strip().lower()
+
+        # 4. Invoke MS Paint Ribbon shape tool selection (Oval, Rectangle, Triangle, Five-point star, Heart, Diamond, Right arrow, Line)
+        ribbon_selected = self._select_paint_ribbon_shape_tool(s_type)
+        await asyncio.sleep(0.20)
+
+        # 5. Compute diagonal bounding box coordinates inside safe canvas
+        start_x = max(c_left + 40, cx - max_r)
+        start_y = max(c_top + 40, cy - max_r)
+        end_x = min(c_right - 40, cx + max_r)
+        end_y = min(c_bottom - 40, cy + max_r)
+
+        # Generate diagonal drag path over 1.15s (approx 65 interpolation steps)
+        steps = 65
+        diag_points = []
+        for i in range(steps + 1):
+            t = i / float(steps)
+            diag_points.append((
+                int(start_x + (end_x - start_x) * t),
+                int(start_y + (end_y - start_y) * t),
+            ))
+
+        pre_info = await self._capture_frame_to_disk_and_ui()
+        pre_hash = pre_info.get("frame_hash", "")
+
+        # 6. Glide cursor smoothly to (start_x, start_y), press left down, drag diagonally over 1.15s, release left button
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._drag_native_win32_path, diag_points, 0.017, "left")
+
+        # 7. Click outside bounding box to commit shape
+        commit_x = min(c_right - 20, end_x + 35)
+        commit_y = min(c_bottom - 20, end_y + 35)
+        await asyncio.sleep(0.12)
+        self._click_native_win32(commit_x, commit_y)
+        await asyncio.sleep(0.20)
+
+        post_info = await self._capture_frame_to_disk_and_ui()
+        post_hash = post_info.get("frame_hash", "")
+        changed = (pre_hash != post_hash) if (pre_hash and post_hash) else True
+
+        return (
+            f"Successfully precision-drawn '{s_type}' in MS Paint from ({start_x}, {start_y}) to ({end_x}, {end_y}) "
+            f"via Ribbon shape tool selection (tool_selected={ribbon_selected}) and 1.15s diagonal hardware drag (Canvas Visually Updated: {changed})."
+        )
+
+    @dione_tool(
+        description=(
+            "Drag the mouse from (start_x, start_y) to (end_x, end_y) with the mouse button held down "
+            "(uses vercel-labs/agent-desktop SendInput drag synthesis with 200ms pickup settle and release guard). "
+            "Use this for drag-and-drop, sliders, text selection, or drawing lines/shapes."
+        ),
+        permission_level="execute",
+        requires_confirmation=False,
+    )
+    async def computer_drag(
+        self,
+        start_x: int,
+        start_y: int,
+        end_x: int,
+        end_y: int,
+        steps: int = 25,
+        button: str = "left",
+    ) -> str:
+        """Smoothly drag the mouse from (start_x, start_y) to (end_x, end_y)."""
+        n_steps = max(5, min(int(steps or 25), 200))
+        pts = [
+            (
+                int(round(start_x + (end_x - start_x) * (i / n_steps))),
+                int(round(start_y + (end_y - start_y) * (i / n_steps))),
+            )
+            for i in range(n_steps + 1)
+        ]
+        ok = self._drag_native_win32_path(pts, step_delay_s=0.015, button=button)
+        return f"Dragged mouse ({button}) from ({start_x}, {start_y}) to ({end_x}, {end_y}) across {n_steps} steps (success={ok})."
+
+    @dione_tool(
+        description=(
+            "Execute a semantic Windows UIAutomation (UIA) pattern directly on a control by its name "
+            "(ported from qwenlm/open-computer-use & vercel-labs/agent-desktop): "
+            "supports pattern='invoke' (click button/menu), 'toggle' (checkbox), 'select' (tab/list item), or 'set_value' (set text field value directly)."
+        ),
+        permission_level="execute",
+        requires_confirmation=False,
+    )
+    async def computer_uia_action(
+        self,
+        target_name: str,
+        pattern: str = "invoke",
+        value: str = "",
+        app: Optional[str] = None,
+    ) -> str:
+        """Semantic UIA control invocation without relying on pixel coordinates."""
+        if app and app.strip():
+            self._focus_window_by_keyword(app.strip())
+            await asyncio.sleep(0.3)
+
+        t_low = target_name.strip().lower()
+        pat_low = (pattern or "invoke").strip().lower()
+
+        try:
+            import uiautomation as auto
+            fg = auto.GetForegroundControl()
+            if not fg:
+                return f"No foreground control available; falling back to computer_locate_and_click('{target_name}')."
+
+            matched_ctrl = None
+
+            def _search(ctrl, depth: int = 0):
+                nonlocal matched_ctrl
+                if depth > 6 or matched_ctrl is not None:
+                    return
+                try:
+                    nm = (ctrl.Name or "").strip()
+                    if nm and (nm.lower() == t_low or (len(t_low) >= 3 and t_low in nm.lower())):
+                        matched_ctrl = ctrl
+                        return
+                    for ch in ctrl.GetChildren():
+                        _search(ch, depth + 1)
+                        if matched_ctrl is not None:
+                            return
+                except Exception:
+                    pass
+
+            _search(fg, 0)
+            if matched_ctrl is not None:
+                if pat_low == "set_value":
+                    try:
+                        vp = matched_ctrl.GetValuePattern()
+                        if vp:
+                            vp.SetValue(value)
+                            return f"Set value '{value}' on UIA control '{matched_ctrl.Name}' via ValuePattern."
+                    except Exception:
+                        pass
+                elif pat_low == "toggle":
+                    try:
+                        tp = matched_ctrl.GetTogglePattern()
+                        if tp:
+                            tp.Toggle()
+                            return f"Toggled UIA control '{matched_ctrl.Name}' via TogglePattern."
+                    except Exception:
+                        pass
+                elif pat_low == "select":
+                    try:
+                        sp = matched_ctrl.GetSelectionItemPattern()
+                        if sp:
+                            sp.Select()
+                            return f"Selected UIA control '{matched_ctrl.Name}' via SelectionItemPattern."
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        ip = matched_ctrl.GetInvokePattern()
+                        if ip:
+                            ip.Invoke()
+                            return f"Invoked UIA control '{matched_ctrl.Name}' via InvokePattern."
+                    except Exception:
+                        pass
+
+                # Fallback to clicking center of matched UIA control
+                rect = matched_ctrl.BoundingRectangle
+                if rect and rect.width() > 2 and rect.height() > 2:
+                    cx, cy = (rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2
+                    self._click_native_win32(cx, cy)
+                    return f"Clicked UIA control '{matched_ctrl.Name}' at ({cx}, {cy})."
+        except Exception as e:
+            logger.debug(f"[UIA Action] Fallback to locate_and_click: {e}")
+
+        return await self.computer_locate_and_click(description=target_name)
 
     @dione_tool(
         description=(
@@ -597,7 +945,7 @@ class ComputerUsePlugin(BasePlugin):
         description=(
             "Analyze the live desktop screen using Gemini Vision (with a Set-of-Mark & 0-100% coordinate grid overlay) "
             "to answer a specific visual question, verify whether an action succeeded, or locate buttons in games/browsers "
-            "(e.g. 'Where is the Play / Deathmatch button?', 'Did the modal open?', 'What is currently on screen?')."
+            "(e.g. 'Where is the Play / Deathmatch button?', 'Is there a circle drawn on the Paint canvas?')."
         ),
         permission_level="read",
         requires_confirmation=False,
@@ -665,21 +1013,18 @@ class ComputerUsePlugin(BasePlugin):
         desc_clean = description.strip()
         desc_low = desc_clean.lower()
 
-        # Capture pre-click state (for UIA + Vision + pre-click frame hash)
         pre_info = await self._capture_frame_to_disk_and_ui()
         pre_hash = pre_info.get("frame_hash", "")
         uia_elements = pre_info.get("interactive_controls", [])
         sw, sh = pre_info.get("resolution", [1920, 1080])
 
         best_match = None
-        # Stage 1A: Exact UIA name match
         for el in uia_elements:
             el_name = el["name"].lower().strip()
             if el_name and desc_low == el_name:
                 best_match = el
                 break
 
-        # Stage 1B: Substring UIA match guarded by len >= 3 to prevent 1-letter false positives (Forensic Bug #10)
         if not best_match:
             for el in uia_elements:
                 el_name = el["name"].lower().strip()
@@ -698,7 +1043,6 @@ class ComputerUsePlugin(BasePlugin):
             clicked_coords = (cx, cy)
             method_used = f"Windows UIA ('{best_match['name']}', {best_match['type']})"
 
-        # Stage 2: Multimodal Set-of-Mark + Grid Gemini Vision Grounding (for DirectX games, Riot Client, Canvas, custom web UIs)
         if not clicked_coords:
             jpg_bytes = pre_info.get("_raw_annotated_jpeg_bytes") or pre_info.get("_raw_jpeg_bytes")
             api_key = os.getenv("DIONE_LLM_API_KEY") or os.getenv("GEMINI_API_KEY")
@@ -751,7 +1095,6 @@ class ComputerUsePlugin(BasePlugin):
                 f"Call `inspect_screen_vision` to inspect the full screen layout."
             )
 
-        # Stage 3: Post-click visual state transition check (450ms settle)
         await asyncio.sleep(0.45)
         post_info = await self._capture_frame_to_disk_and_ui()
         post_hash = post_info.get("frame_hash", "")
@@ -766,8 +1109,9 @@ class ComputerUsePlugin(BasePlugin):
     @dione_tool(
         description=(
             "Execute a low-level desktop action.\n"
-            ":param action: One of 'click', 'double_click', 'right_click', 'type', 'key', 'scroll', 'wait', 'focus_app', 'list_windows', 'list_apps', 'capture'\n"
-            ":param coordinate: [x, y] pixel coordinates for click actions\n"
+            ":param action: One of 'click', 'double_click', 'triple_click', 'right_click', 'middle_click', 'drag', 'draw_circle', 'move', 'type', 'key', 'scroll', 'wait', 'focus_app', 'list_windows', 'list_apps', 'capture'\n"
+            ":param coordinate: [x, y] pixel coordinates for click/move/drag end\n"
+            ":param start_coordinate: [start_x, start_y] pixel coordinates for 'drag'\n"
             ":param element: UI element index if using Set-of-Mark\n"
             ":param text: Text string to type when action='type'\n"
             ":param keys: Key or shortcut to press when action='key' (e.g. 'enter', 'f11', 'ctrl+l', 'ctrl+t', 'alt+tab')\n"
@@ -783,6 +1127,7 @@ class ComputerUsePlugin(BasePlugin):
         self,
         action: str,
         coordinate: Optional[List[int]] = None,
+        start_coordinate: Optional[List[int]] = None,
         element: Optional[int] = None,
         text: Optional[str] = None,
         keys: Optional[str] = None,
@@ -793,7 +1138,7 @@ class ComputerUsePlugin(BasePlugin):
         duration: float = 1.0,
         delivery_mode: str = "foreground",
     ) -> str:
-        """Strongly-typed unified computer_use action dispatcher with fast native Win32 execution."""
+        """Strongly-typed unified computer_use action dispatcher with fast native Win32 SendInput execution."""
         act = (action or "").strip().lower()
 
         if act in ("capture", "screenshot"):
@@ -809,22 +1154,35 @@ class ComputerUsePlugin(BasePlugin):
                 await asyncio.sleep(0.4)
                 return json.dumps({"ok": True, "action": "focus_app", "focused": matched["title"]})
 
-        if act in ("click", "left_click", "double_click", "right_click") and coordinate and len(coordinate) >= 2:
+        if act in ("draw_circle", "circle"):
+            cx = int(coordinate[0]) if coordinate and len(coordinate) >= 2 else None
+            cy = int(coordinate[1]) if coordinate and len(coordinate) >= 2 else None
+            return await self.computer_draw_shape(shape="circle", center_x=cx, center_y=cy, app=app or "mspaint")
+
+        if act in ("drag", "left_click_drag"):
+            if start_coordinate and len(start_coordinate) >= 2 and coordinate and len(coordinate) >= 2:
+                return await self.computer_drag(
+                    start_x=int(start_coordinate[0]),
+                    start_y=int(start_coordinate[1]),
+                    end_x=int(coordinate[0]),
+                    end_y=int(coordinate[1]),
+                )
+
+        if act in ("move", "mouse_move", "hover") and coordinate and len(coordinate) >= 2:
+            self._move_cursor_smooth(int(coordinate[0]), int(coordinate[1]))
+            return json.dumps({"ok": True, "action": "move", "coordinate": [int(coordinate[0]), int(coordinate[1])]})
+
+        if act in ("click", "left_click", "double_click", "triple_click", "right_click", "middle_click") and coordinate and len(coordinate) >= 2:
             x, y = int(coordinate[0]), int(coordinate[1])
-            ok = self._click_native_win32(x, y, double=(act == "double_click"), right=(act == "right_click"))
+            ok = self._click_native_win32(
+                x,
+                y,
+                double=(act == "double_click"),
+                right=(act == "right_click"),
+                middle=(act == "middle_click"),
+                count=(3 if act == "triple_click" else 1),
+            )
             return json.dumps({"ok": ok, "action": act, "coordinate": [x, y]})
-
-        if act in ("drag", "mouse_drag", "left_click_drag") and coordinate and len(coordinate) >= 4:
-            ok = self._drag_native_win32(int(coordinate[0]), int(coordinate[1]), int(coordinate[2]), int(coordinate[3]))
-            return json.dumps({"ok": ok, "action": act, "from": coordinate[:2], "to": coordinate[2:4]})
-
-        if act in ("draw_shape", "draw_circle", "shape", "circle"):
-            s_name = text or "circle"
-            cx = int(coordinate[0]) if coordinate and len(coordinate) >= 2 else 700
-            cy = int(coordinate[1]) if coordinate and len(coordinate) >= 2 else 500
-            r = int(amount or 120)
-            res = await self.computer_draw_shape(shape=s_name, center_x=cx, center_y=cy, radius=r, app=(app or "mspaint"))
-            return json.dumps({"ok": True, "action": act, "result": res})
 
         if act == "type" and text is not None:
             return await self.computer_type(text=text, press_enter=False)
@@ -840,19 +1198,22 @@ class ComputerUsePlugin(BasePlugin):
 
         if act == "scroll":
             try:
-                import ctypes
+                if coordinate and len(coordinate) >= 2:
+                    self._move_cursor_smooth(int(coordinate[0]), int(coordinate[1]))
                 if hasattr(ctypes, "windll"):
-                    MOUSEEVENTF_WHEEL = 0x0800
                     ticks = int(amount or 5) * (120 if direction in ("up", "right") else -120)
-                    ctypes.windll.user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, ticks, 0)
+                    flag = MOUSEEVENTF_HWHEEL if direction in ("left", "right") else MOUSEEVENTF_WHEEL
+                    self._post_sendinput_mouse(0, 0, flag, mouse_data=ticks)
                     return json.dumps({"ok": True, "action": "scroll", "direction": direction, "amount": amount})
             except Exception as se:
                 return json.dumps({"ok": False, "error": str(se)})
 
-        # Fallback to Hermes CUA driver for element-index clicks or list_apps
         payload: Dict[str, Any] = {"action": act, "mode": mode, "delivery_mode": delivery_mode}
         if coordinate is not None:
             payload["coordinate"] = coordinate
+        if start_coordinate is not None:
+            payload["from_coordinate"] = start_coordinate
+            payload["to_coordinate"] = coordinate
         if element is not None:
             payload["element"] = element
         if text is not None:
@@ -878,8 +1239,8 @@ class ComputerUsePlugin(BasePlugin):
     )
     async def computer_click(self, x: int, y: int, button: str = "left", double: bool = False) -> str:
         """Click at exact desktop pixel coordinate and verify active window state."""
-        right = (button.lower() == "right")
-        self._click_native_win32(x, y, double=double, right=right)
+        btn = (button or "left").lower()
+        self._click_native_win32(x, y, double=double, right=(btn == "right"), middle=(btn == "middle"))
         return f"Clicked mouse at ({x}, {y}) [button={button}, double={double}, hold=75ms]"
 
     @dione_tool(
@@ -912,7 +1273,6 @@ class ComputerUsePlugin(BasePlugin):
                 pasted = False
 
         if not pasted:
-            import ctypes
             if hasattr(ctypes, "windll"):
                 user32 = ctypes.windll.user32
                 for char in text:
@@ -944,412 +1304,6 @@ class ComputerUsePlugin(BasePlugin):
         """Trigger keyboard shortcut directly via Win32 hardware scan codes (50ms hold)."""
         ok = self._send_native_win32_key(keys)
         return f"Pressed hotkey '{keys}' (success={ok})."
-
-    @dione_tool(
-        description="Drag the mouse from (start_x, start_y) to (end_x, end_y) with left mouse button held down.",
-        permission_level="execute",
-        requires_confirmation=False,
-    )
-    async def computer_drag(self, start_x: int, start_y: int, end_x: int, end_y: int) -> str:
-        """Drag mouse with left button held down between two screen coordinates."""
-        ok = self._drag_native_win32(start_x, start_y, end_x, end_y)
-        return f"Dragged mouse from ({start_x}, {start_y}) to ({end_x}, {end_y}) [success={ok}]."
-
-    @dione_tool(
-        description=(
-            "Draw a geometric shape or freehand path directly onto MS Paint (`mspaint`), a drawing canvas, or the active screen: "
-            "supports shape='circle', 'square', 'rectangle', 'triangle', 'star', 'heart', 'smiley', 'spiral', 'line', 'house', 'diamond', or 'arrow'. "
-            "Automatically launches/focuses Paint, locates the white canvas below the Ribbon header, and draws with smooth SendInput mouse synthesis."
-        ),
-        permission_level="execute",
-        requires_confirmation=False,
-    )
-    async def computer_draw_shape(
-        self,
-        shape: str = "circle",
-        center_x: int = 700,
-        center_y: int = 500,
-        radius: int = 120,
-        app: str = "mspaint",
-    ) -> str:
-        """
-        Draws one of the 12 verified geometric shapes on MS Paint or drawing canvas.
-        Guards against center_x/center_y = 0 with safe canvas clamping.
-        """
-        # 1. Minimize Dione so it never blocks the Paint canvas
-        try:
-            from server.core.runtime.computer_use import get_computer_use_operator
-            get_computer_use_operator().minimize_dione()
-        except Exception:
-            pass
-
-        # 2. Ensure target app is open and brought to foreground
-        target_app = (app or "mspaint").strip().lower()
-        focused = self._focus_window_by_keyword(target_app)
-        if not focused:
-            await self.launch_app(target_app)
-            await asyncio.sleep(1.0)
-            focused = self._focus_window_by_keyword(target_app)
-        await asyncio.sleep(0.4)
-
-        # 3. Determine safe canvas bounds and center point
-        c_left, c_top, c_right, c_bottom = self._find_paint_canvas_bounds()
-
-        # Ribbon safety: Paint ribbon toolbar occupies top ~170px of the window
-        min_safe_y = max(c_top + 170, c_top + 90)
-        max_safe_y = max(min_safe_y + 120, c_bottom - 90)
-        min_safe_x = c_left + 90
-        max_safe_x = max(min_safe_x + 120, c_right - 90)
-
-        # Clamping guard against Gemini passing center_x=0, center_y=0
-        if center_x is None or center_x <= 0:
-            cx = int((min_safe_x + max_safe_x) // 2)
-        else:
-            cx = max(min_safe_x, min(int(center_x), max_safe_x))
-
-        if center_y is None or center_y <= 0:
-            cy = int((min_safe_y + max_safe_y) // 2)
-        else:
-            cy = max(min_safe_y, min(int(center_y), max_safe_y))
-
-        max_r = max(35, min(int(radius or 120), (max_safe_x - min_safe_x) // 3, (max_safe_y - min_safe_y) // 3))
-
-        # 4. Activate canvas with initial click
-        self._click_native_win32(cx, cy)
-        await asyncio.sleep(0.12)
-
-        s_type = (shape or "circle").strip().lower()
-        strokes: List[List[Tuple[int, int]]] = []
-
-        # 1. Circle / Oval
-        if s_type in ("circle", "oval", "ring"):
-            steps = 72
-            pts = [
-                (
-                    int(round(cx + max_r * math.cos(2.0 * math.pi * i / steps))),
-                    int(round(cy + max_r * math.sin(2.0 * math.pi * i / steps))),
-                )
-                for i in range(steps + 1)
-            ]
-            strokes.append(pts)
-
-        # 2. Square
-        elif s_type in ("square", "box"):
-            corners = [
-                (cx - max_r, cy - max_r),
-                (cx + max_r, cy - max_r),
-                (cx + max_r, cy + max_r),
-                (cx - max_r, cy + max_r),
-                (cx - max_r, cy - max_r),
-            ]
-            pts = []
-            for i in range(len(corners) - 1):
-                x1, y1 = corners[i]
-                x2, y2 = corners[i + 1]
-                for step in range(16):
-                    t = step / 15.0
-                    pts.append((int(x1 + (x2 - x1) * t), int(y1 + (y2 - y1) * t)))
-            strokes.append(pts)
-
-        # 3. Rectangle
-        elif s_type in ("rectangle", "rect"):
-            rx = int(max_r * 1.45)
-            ry = int(max_r * 0.85)
-            corners = [
-                (cx - rx, cy - ry),
-                (cx + rx, cy - ry),
-                (cx + rx, cy + ry),
-                (cx - rx, cy + ry),
-                (cx - rx, cy - ry),
-            ]
-            pts = []
-            for i in range(len(corners) - 1):
-                x1, y1 = corners[i]
-                x2, y2 = corners[i + 1]
-                for step in range(16):
-                    t = step / 15.0
-                    pts.append((int(x1 + (x2 - x1) * t), int(y1 + (y2 - y1) * t)))
-            strokes.append(pts)
-
-        # 4. Triangle
-        elif s_type == "triangle":
-            corners = [
-                (cx, cy - max_r),
-                (cx + int(max_r * 0.95), cy + int(max_r * 0.85)),
-                (cx - int(max_r * 0.95), cy + int(max_r * 0.85)),
-                (cx, cy - max_r),
-            ]
-            pts = []
-            for i in range(len(corners) - 1):
-                x1, y1 = corners[i]
-                x2, y2 = corners[i + 1]
-                for step in range(18):
-                    t = step / 17.0
-                    pts.append((int(x1 + (x2 - x1) * t), int(y1 + (y2 - y1) * t)))
-            strokes.append(pts)
-
-        # 5. Star (5-pointed)
-        elif s_type == "star":
-            outer_r = max_r
-            inner_r = int(max_r * 0.42)
-            verts = []
-            for i in range(11):
-                ang = -math.pi / 2.0 + i * (math.pi / 5.0)
-                r_curr = outer_r if i % 2 == 0 else inner_r
-                verts.append((int(cx + r_curr * math.cos(ang)), int(cy + r_curr * math.sin(ang))))
-            pts = []
-            for i in range(len(verts) - 1):
-                x1, y1 = verts[i]
-                x2, y2 = verts[i + 1]
-                for step in range(10):
-                    t = step / 9.0
-                    pts.append((int(x1 + (x2 - x1) * t), int(y1 + (y2 - y1) * t)))
-            strokes.append(pts)
-
-        # 6. Heart (Cardioid)
-        elif s_type == "heart":
-            steps = 72
-            pts = []
-            scale = max_r / 16.0
-            for i in range(steps + 1):
-                t = 2.0 * math.pi * i / steps
-                hx = 16.0 * (math.sin(t) ** 3)
-                hy = -(13.0 * math.cos(t) - 5.0 * math.cos(2 * t) - 2.0 * math.cos(3 * t) - math.cos(4 * t))
-                pts.append((int(cx + hx * scale), int(cy + hy * scale)))
-            strokes.append(pts)
-
-        # 7. Smiley Face
-        elif s_type in ("smiley", "face"):
-            steps = 60
-            strokes.append([
-                (int(cx + max_r * math.cos(2 * math.pi * i / steps)), int(cy + max_r * math.sin(2 * math.pi * i / steps)))
-                for i in range(steps + 1)
-            ])
-            er = max(10, max_r // 8)
-            lx, ly = cx - int(max_r * 0.35), cy - int(max_r * 0.25)
-            strokes.append([
-                (int(lx + er * math.cos(2 * math.pi * i / 20)), int(ly + er * math.sin(2 * math.pi * i / 20)))
-                for i in range(21)
-            ])
-            rx_e, ry_e = cx + int(max_r * 0.35), cy - int(max_r * 0.25)
-            strokes.append([
-                (int(rx_e + er * math.cos(2 * math.pi * i / 20)), int(ry_e + er * math.sin(2 * math.pi * i / 20)))
-                for i in range(21)
-            ])
-            sr = int(max_r * 0.55)
-            strokes.append([
-                (int(cx + sr * math.cos(math.pi * 0.15 + math.pi * 0.7 * i / 30)), int(cy + int(max_r * 0.1) + sr * math.sin(math.pi * 0.15 + math.pi * 0.7 * i / 30)))
-                for i in range(31)
-            ])
-
-        # 8. Spiral
-        elif s_type == "spiral":
-            steps = 100
-            pts = []
-            for i in range(steps + 1):
-                t = 4.0 * math.pi * i / steps
-                r_curr = (i / steps) * max_r
-                pts.append((int(cx + r_curr * math.cos(t)), int(cy + r_curr * math.sin(t))))
-            strokes.append(pts)
-
-        # 9. Line
-        elif s_type == "line":
-            strokes.append([(cx - max_r, cy), (cx + max_r, cy)])
-
-        # 10. Diamond
-        elif s_type in ("diamond", "rhombus"):
-            corners = [
-                (cx, cy - max_r),
-                (cx + int(max_r * 0.8), cy),
-                (cx, cy + max_r),
-                (cx - int(max_r * 0.8), cy),
-                (cx, cy - max_r),
-            ]
-            pts = []
-            for i in range(len(corners) - 1):
-                x1, y1 = corners[i]
-                x2, y2 = corners[i + 1]
-                for step in range(16):
-                    t = step / 15.0
-                    pts.append((int(x1 + (x2 - x1) * t), int(y1 + (y2 - y1) * t)))
-            strokes.append(pts)
-
-        # 11. House
-        elif s_type == "house":
-            hw = int(max_r * 0.9)
-            hh = int(max_r * 0.7)
-            b_top = cy - int(max_r * 0.1)
-            b_bot = cy + hh
-            corners_box = [
-                (cx - hw, b_top),
-                (cx + hw, b_top),
-                (cx + hw, b_bot),
-                (cx - hw, b_bot),
-                (cx - hw, b_top),
-            ]
-            pts_box = []
-            for i in range(len(corners_box) - 1):
-                x1, y1 = corners_box[i]
-                x2, y2 = corners_box[i + 1]
-                for step in range(12):
-                    t = step / 11.0
-                    pts_box.append((int(x1 + (x2 - x1) * t), int(y1 + (y2 - y1) * t)))
-            strokes.append(pts_box)
-
-            roof = [
-                (cx - hw, b_top),
-                (cx, cy - max_r),
-                (cx + hw, b_top),
-            ]
-            pts_roof = []
-            for i in range(len(roof) - 1):
-                x1, y1 = roof[i]
-                x2, y2 = roof[i + 1]
-                for step in range(12):
-                    t = step / 11.0
-                    pts_roof.append((int(x1 + (x2 - x1) * t), int(y1 + (y2 - y1) * t)))
-            strokes.append(pts_roof)
-
-            dw = int(hw * 0.3)
-            dh = int(hh * 0.55)
-            door = [
-                (cx - dw, b_bot),
-                (cx - dw, b_bot - dh),
-                (cx + dw, b_bot - dh),
-                (cx + dw, b_bot),
-            ]
-            pts_door = []
-            for i in range(len(door) - 1):
-                x1, y1 = door[i]
-                x2, y2 = door[i + 1]
-                for step in range(8):
-                    t = step / 7.0
-                    pts_door.append((int(x1 + (x2 - x1) * t), int(y1 + (y2 - y1) * t)))
-            strokes.append(pts_door)
-
-        # 12. Arrow
-        elif s_type == "arrow":
-            pts_shaft = [
-                (int(cx - max_r + (max_r * 1.7) * (i / 20.0)), cy)
-                for i in range(21)
-            ]
-            strokes.append(pts_shaft)
-            head_x = cx + int(max_r * 0.7)
-            tip_x = cx + max_r
-            corners_head = [
-                (head_x - int(max_r * 0.35), cy - int(max_r * 0.45)),
-                (tip_x, cy),
-                (head_x - int(max_r * 0.35), cy + int(max_r * 0.45)),
-            ]
-            pts_head = []
-            for i in range(len(corners_head) - 1):
-                x1, y1 = corners_head[i]
-                x2, y2 = corners_head[i + 1]
-                for step in range(12):
-                    t = step / 11.0
-                    pts_head.append((int(x1 + (x2 - x1) * t), int(y1 + (y2 - y1) * t)))
-            strokes.append(pts_head)
-
-        else:
-            strokes.append([(cx - max_r, cy), (cx + max_r, cy)])
-
-        for stroke in strokes:
-            self._drag_native_win32_path(stroke, step_delay_s=0.012, button="left")
-            await asyncio.sleep(0.12)
-
-        return f"Successfully drew '{s_type}' on MS Paint canvas centered at ({cx}, {cy}) with radius={max_r}px."
-
-    @dione_tool(
-        description="Physically draw a circle on the active window or canvas (e.g. Paint) by holding mouse left button down and tracing circumference around (center_x, center_y) with given radius (default 80px).",
-        permission_level="execute",
-        requires_confirmation=False,
-    )
-    async def computer_draw_circle(self, center_x: int = 700, center_y: int = 500, radius: int = 80) -> str:
-        """Physically draw a smooth circle on screen (such as Paint canvas) via parametric mouse tracing."""
-        return await self.computer_draw_shape(shape="circle", center_x=center_x, center_y=center_y, radius=radius, app="mspaint")
-
-    @dione_tool(
-        description=(
-            "Execute a semantic Windows UIAutomation (UIA) action directly on a control by its name: "
-            "supports pattern='invoke' (click button/menu), 'toggle' (checkbox), 'select' (tab/list item), or 'set_value' (text field)."
-        ),
-        permission_level="execute",
-        requires_confirmation=False,
-    )
-    async def computer_uia_action(
-        self,
-        target_name: str,
-        pattern: str = "invoke",
-        value: str = "",
-        app: str = "",
-    ) -> str:
-        """Semantic UIA control invocation without relying on pixel coordinates."""
-        if app and app.strip():
-            self._focus_window_by_keyword(app.strip())
-            await asyncio.sleep(0.3)
-
-        t_low = target_name.strip().lower()
-        pat_low = (pattern or "invoke").strip().lower()
-
-        try:
-            import uiautomation as auto
-            fg = auto.GetForegroundControl()
-            if not fg:
-                return f"No foreground control available; falling back to computer_locate_and_click('{target_name}')."
-
-            matched_ctrl = None
-
-            def _search(ctrl, depth: int = 0):
-                nonlocal matched_ctrl
-                if depth > 6 or matched_ctrl is not None:
-                    return
-                try:
-                    nm = (ctrl.Name or "").strip()
-                    if nm and (nm.lower() == t_low or (len(t_low) >= 3 and t_low in nm.lower())):
-                        matched_ctrl = ctrl
-                        return
-                    for ch in ctrl.GetChildren():
-                        _search(ch, depth + 1)
-                        if matched_ctrl is not None:
-                            return
-                except Exception:
-                    pass
-
-            _search(fg, 0)
-            if not matched_ctrl:
-                return f"UIA control '{target_name}' not found in foreground window."
-
-            if pat_low == "toggle":
-                toggle_pat = matched_ctrl.GetTogglePattern()
-                if toggle_pat:
-                    toggle_pat.Toggle()
-                    return f"Toggled UIA control '{target_name}'."
-            elif pat_low == "select":
-                sel_pat = matched_ctrl.GetSelectionItemPattern()
-                if sel_pat:
-                    sel_pat.Select()
-                    return f"Selected UIA item '{target_name}'."
-            elif pat_low == "set_value" and value:
-                val_pat = matched_ctrl.GetValuePattern()
-                if val_pat:
-                    val_pat.SetValue(value)
-                    return f"Set value of UIA control '{target_name}' to '{value}'."
-
-            inv_pat = matched_ctrl.GetInvokePattern()
-            if inv_pat:
-                inv_pat.Invoke()
-                return f"Invoked UIA button '{target_name}'."
-
-            rect = matched_ctrl.BoundingRectangle
-            if rect:
-                mid_x = (rect.left + rect.right) // 2
-                mid_y = (rect.top + rect.bottom) // 2
-                self._click_native_win32(mid_x, mid_y)
-                return f"Clicked UIA element '{target_name}' at ({mid_x}, {mid_y})."
-
-            return f"Control '{target_name}' found but no actionable UIA pattern available."
-        except Exception as e:
-            return f"UIA action error: {e}"
 
     @dione_tool(
         description="Open Microsoft Edge or Google Chrome to a URL (automatically prepends https:// if needed).",
@@ -1396,21 +1350,16 @@ class ComputerUsePlugin(BasePlugin):
     async def play_youtube_video(self, query: str, fullscreen: bool = True, browser: str = "auto") -> str:
         """Resolve top YouTube video watch URL and launch directly (with static help video filter)."""
         raw_input = (query or "").strip()
-
-        # 1. Clean CLI execution wrappers and outer quotes (Forensic Bug #06)
         clean_q = re.sub(r'^(?:start\s+(?:chrome|msedge|edge|browser)\s+)?["\']?', '', raw_input, flags=re.I)
         clean_q = re.sub(r'["\']?$', '', clean_q).strip()
 
-        # Exclude static YouTube help / support video IDs
         EXCLUDED_HELP_IDS = {"6rZRe1nfrJo", "dQw4w9WgXcQ"}
         watch_url = None
 
-        # 2. Check if already a direct YouTube watch URL
         watch_match = re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})', clean_q)
         if watch_match and watch_match.group(1) not in EXCLUDED_HELP_IDS:
             watch_url = f"https://www.youtube.com/watch?v={watch_match.group(1)}"
 
-        # 3. Check if channel URL (e.g. https://www.youtube.com/@MrWhosetheboss or @MrWhosetheboss/videos)
         if not watch_url:
             channel_match = re.search(r'(?:https?://(?:www\.)?youtube\.com/)?(@[a-zA-Z0-9_.-]+(?:/videos)?)', clean_q)
             if channel_match:
@@ -1439,7 +1388,6 @@ class ComputerUsePlugin(BasePlugin):
                 except Exception as e:
                     logger.debug(f"[YouTube] Channel video lookup note: {e}")
 
-        # 4. Standard YouTube search with natural language prefix stripping
         if not watch_url:
             search_terms = re.sub(r'\b(?:open\s+(?:yt|youtube)\s+(?:and\s+)?|play\s+|in\s+full\s*screen|full\s*screen)\b', '', clean_q, flags=re.I).strip()
             if not search_terms:
@@ -1473,77 +1421,39 @@ class ComputerUsePlugin(BasePlugin):
         await self.open_browser(url=target_url, browser=browser, fullscreen=fullscreen)
 
         if fullscreen and watch_url:
-            await asyncio.sleep(1.8)  # 1.8s settle standard before pressing 'f'
+            await asyncio.sleep(1.8)
             self._focus_window_by_keyword("youtube")
             self._send_native_win32_key("f")
 
         return f"Playing YouTube video '{query}' at {target_url} (fullscreen={fullscreen})."
 
-    async def _launch_via_start_menu(self, app_name: str) -> bool:
-        """
-        Human-like application launch via Windows Start Menu:
-        1. Presses Windows key (VK_LWIN 0x5B) to trigger Start Menu search.
-        2. Waits 350ms for Windows search bar to gain focus.
-        3. Types the application name.
-        4. Waits 450ms for Windows search to index and highlight the top match.
-        5. Presses Enter to launch.
-        """
-        try:
-            self._send_native_win32_key("win")
-            await asyncio.sleep(0.35)
-            await self.computer_type(text=app_name, press_enter=False)
-            await asyncio.sleep(0.45)
-            self._send_native_win32_key("enter")
-            return True
-        except Exception as e:
-            logger.debug(f"[StartMenuLaunch] Error launching '{app_name}': {e}")
-            return False
-
     @dione_tool(
-        description="Launch or focus a desktop application by name (e.g. 'Paint', 'Spotify', 'Chrome', 'Edge', 'VS Code', 'Notepad', 'Calculator', 'Explorer', 'Valorant', 'Riot Client') using human-like Windows Start Menu search or direct focus with a 1.8s render settle.",
+        description="Launch or focus a desktop application by name (e.g. 'Paint', 'mspaint', 'Spotify', 'Chrome', 'Edge', 'VS Code', 'Notepad', 'Calculator', 'Explorer', 'Valorant', 'Riot Client') with a 1.8s render settle.",
         permission_level="execute",
         requires_confirmation=False,
     )
     async def launch_app(self, app: str) -> str:
-        """Launch or focus desktop application via native Windows Start Menu with 1.8s render settle standard."""
+        """Launch or focus desktop application with 1.8s render settle standard."""
         a_lower = app.lower().strip()
-        clean_name = a_lower.replace("mspaint", "paint").replace("calc", "calculator")
 
-        # 1. First check if already open and focus it
-        existing = self._focus_window_by_keyword(clean_name) or self._focus_window_by_keyword(a_lower)
+        existing = self._focus_window_by_keyword(a_lower, maximize=(a_lower in ("paint", "mspaint")))
         if not existing and a_lower in ("valorant", "riot"):
             existing = self._focus_window_by_keyword("riot") or self._focus_window_by_keyword("valorant")
-        if not existing and a_lower in ("paint", "mspaint"):
-            existing = self._focus_window_by_keyword("paint")
 
         if existing:
             await asyncio.sleep(0.65)
             return f"Focused already-running window: '{existing['title']}' (HWND: {existing['hwnd']})."
 
-        # 2. Preferred Human-Like Method: Windows Key -> Type Name -> Press Enter
-        # Zero command prompt / zero CMD pipe hangs
-        ok = await self._launch_via_start_menu(clean_name)
-        if ok:
-            await asyncio.sleep(1.8)  # 1.8s render settle standard
-            focused = self._focus_window_by_keyword(clean_name) or self._focus_window_by_keyword(a_lower)
-            if not focused and a_lower in ("valorant", "riot"):
-                focused = self._focus_window_by_keyword("riot") or self._focus_window_by_keyword("valorant")
-            if not focused and a_lower in ("paint", "mspaint"):
-                focused = self._focus_window_by_keyword("paint")
-            await asyncio.sleep(0.65)
-            win_title = focused["title"] if focused else clean_name.capitalize()
-            return f"Launched and focused '{win_title}' via Windows Start Menu."
-
-        # 3. Fallback: Known binary paths
         known_map = {
+            "paint": ["mspaint.exe"],
+            "ms paint": ["mspaint.exe"],
+            "mspaint": ["mspaint.exe"],
             "chrome": [str(CHROME_EXE)],
             "google chrome": [str(CHROME_EXE)],
             "edge": [str(EDGE_EXE)],
             "microsoft edge": [str(EDGE_EXE)],
             "riot client": [str(RIOT_EXE)],
             "valorant": [str(RIOT_EXE), "--launch-product=valorant", "--launch-patchline=live"],
-            "paint": ["mspaint.exe"],
-            "mspaint": ["mspaint.exe"],
             "notepad": ["notepad.exe"],
             "calc": ["calc.exe"],
             "calculator": ["calc.exe"],
@@ -1558,8 +1468,10 @@ class ComputerUsePlugin(BasePlugin):
         if cmd_args:
             try:
                 subprocess.Popen(cmd_args, shell=(cmd_args[0] in ("cmd", "code")))
-                await asyncio.sleep(1.8)  # 1.8s post-app launch settle standard
-                focused = self._focus_window_by_keyword(clean_name) or self._focus_window_by_keyword(a_lower)
+                await asyncio.sleep(1.8)
+                focused = self._focus_window_by_keyword(a_lower, maximize=(a_lower in ("paint", "mspaint", "ms paint"))) or (
+                    self._focus_window_by_keyword("riot") if "valorant" in a_lower else None
+                )
                 await asyncio.sleep(0.65)
                 win_title = focused["title"] if focused else app
                 return f"Launched and focused '{win_title}'."
@@ -1569,7 +1481,7 @@ class ComputerUsePlugin(BasePlugin):
         try:
             subprocess.Popen(f'start "" "{app}"', shell=True)
             await asyncio.sleep(1.8)
-            focused = self._focus_window_by_keyword(clean_name) or self._focus_window_by_keyword(a_lower)
+            focused = self._focus_window_by_keyword(a_lower)
             await asyncio.sleep(0.65)
             win_title = focused["title"] if focused else app
             return f"Launched application '{win_title}'."

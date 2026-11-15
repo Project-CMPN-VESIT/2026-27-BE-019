@@ -17,7 +17,7 @@
 **Geocey Shejy**   
 **Submitted by** 
 
- Riya Khialanii D12A,34  
+ Riya Khialani D12A,34  
 Jass Shivnani D12B,50  
  Khushi Sadhuramani D12B,44  
 Ruchika Dingria D12B,70  
@@ -30,7 +30,7 @@ Ruchika Dingria D12B,70
 ![][image1]
 
  **CERTIFICATE of Approval**   
-This is to certify that ***Riya Khialani D12A, Jass Shivanani D12B, Khushi Sadhurakmani D12B, Ruchika Dingria D12B*** of Third Year Computer Engineering studying under the University of Mumbai has satisfactorily presented the project on “***Dione***” as a part of the coursework of CAPSTONE PROJECT \- I for Semester-VI under the guidance of **Geocey Shejy** in the year 2025-26.   
+This is to certify that ***Riya Khialani D12A, Jass Shivnani D12B, Khushi Sadhuramani D12B, Ruchika Dingria D12B*** of Third Year Computer Engineering studying under the University of Mumbai has satisfactorily presented the project on “***Dione***” as a part of the coursework of CAPSTONE PROJECT \- I for Semester-VI under the guidance of **Geocey Shejy** in the year 2025-26.   
 \_\_\_\_\_\_***\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_*** 	 
 
  	Date 	 	 
@@ -925,6 +925,19 @@ The next semester will focus on **full system development, optimization, and eva
 * Integrate all modules into a complete system  
 * Perform system-level testing  
 * Prepare for demonstration
+
+## **6.3 Work Distribution and Team Contribution Matrix (Group 19)**
+
+The development of Dione is partitioned among the four group members following an uneven dual-lead and dual-specialist distribution model (100% total contribution), ensuring deep ownership over distinct operational subsystems:
+
+| Student Name | Class & Roll No. | Core Architectural Domain | Contribution % | Key Deliverables & Code Modules |
+| :--- | :--- | :--- | :---: | :--- |
+| **Jass Suraj Shivnani** | **D12B, Roll 50** | **Lead System Architect & Core Autonomous Runtime Lead:**<br>• Core ReAct execution loop with deterministic step budgeting ($N_{\max} = 10$).<br>• Native Win32 CUA hardware simulation (`SendInput`, `mouse_event`, UIA Session 0 hook).<br>• 5-Tier Poset Lattice Security Kernel & interactive permission gates.<br>• Tool Self-Healing AST Parser and Session Compactor. | **35%** | `server/core/engine.py`<br>`server/hermes_computer_use/`<br>`server/core/compactor.py`<br>`server/security/safety.py`<br>`server/main.py` |
+| **Riya Sanjay Khialani** | **D12A, Roll 34** | **Live Multimodal Audio Pipeline & Frontend Lead:**<br>• Full-Duplex 16kHz bidirectional Gemini Live WebSocket audio bridge.<br>• OpenClaw frosted glass UI and AG-UI Server-Sent Events (SSE) streaming.<br>• Multi-channel Google Workspace integrations (OAuth2, Gmail, Calendar, Drive).<br>• Mobile QR authentication bridge and remote control socket. | **30%** | `server/api/routes/audio.py`<br>`server/api/routes/chat.py`<br>`web/src/App.tsx`<br>`web/src/components/`<br>`server/plugins/builtin/email_plugin.py` |
+| **Khushi Sadhuramani** | **D12B, Roll 44** | **Knowledge Graph & GraphRAG Memory Specialist:**<br>• NetworkX MultiDiGraph 2-Hop relational memory store.<br>• Contact disambiguation and entity resolution algorithms.<br>• Subgraph serialization and Knapsack context optimization.<br>• ChromaDB vector embeddings synchronization and interactive Graph UI endpoints. | **18%** | `server/knowledge/graph.py`<br>`server/knowledge/entities.py`<br>`server/knowledge/relations.py`<br>`server/knowledge/vector_store.py`<br>`server/api/routes/knowledge.py` |
+| **Ruchika Dingria** | **D12B, Roll 70** | **Proactive Inactive Synthesis & Quality Assurance Specialist:**<br>• Win32 idle state tracker (`GetLastInputInfo`) and touch wake detection.<br>• "Dream & Scout" autonomous sleep-state synthesis and genuine mail reading.<br>• Multi-axis affective state modeling and emotion classification.<br>• 100-Case empirical benchmark evaluation across GAIA & AgentBench.<br>• IEEE Transactions research paper drafting and Black Book formatting. | **17%** | `server/proactive/idle_tracker.py`<br>`server/proactive/dream_engine.py`<br>`server/sentiment/`<br>`docs/DIONE_IEEE_RESEARCH_PAPER.md`<br>`benchmarks/` |
+| **Total Group Allocation** | **Group 19** | **Complete System Integration, Live Defense, and Documentation** | **100%** | **Dione Complete System** |
+
 
 # **CHAPTER 7: CONCLUSION**
 

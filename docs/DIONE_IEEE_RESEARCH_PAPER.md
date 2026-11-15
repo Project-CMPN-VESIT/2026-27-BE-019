@@ -209,6 +209,19 @@ This paper describes Dione, a local-first assistant runtime that connects a boun
 
 ---
 
+## Acknowledgment & CReDiT Author Contribution Statement
+
+This research project was conducted at the Department of Computer Engineering, Vivekanand Education Society's Institute of Technology (VESIT), affiliated with the University of Mumbai, under the guidance of Assistant Professor Geocey Shejy.
+
+Following the standard Contributor Roles Taxonomy (CReDiT), author contributions and project ownership are structured under a 4-person distribution model (100% total allocation):
+- **Jass Suraj Shivnani (35% — Lead System Architect & Core Autonomous Runtime Lead):** Conceptualization, System Architecture, Core ReAct Execution Loop, CUA Win32 Desktop Actuation, Poset Lattice Security Kernel, Tool Self-Healing AST Parser, FastAPI Server Framework, Writing – Original Draft.
+- **Riya Sanjay Khialani (30% — Live Multimodal Audio Pipeline & Frontend Lead):** Methodology, Live Multimodal Audio Pipeline, 16kHz Gemini Live Full-Duplex WebSocket Bridge, OpenClaw Frosted Glass UI, AG-UI SSE Streaming Protocol, Google Workspace Cloud Integrations, Software, Writing – Review & Editing.
+- **Khushi Sadhuramani (18% — Knowledge Graph & GraphRAG Memory Specialist):** Data Curation, Relational Multigraph Architecture, NetworkX 2-Hop Path Ranking, Entity Resolution & Disambiguation Algorithms, ChromaDB Vector Synchronization, Graph Visualization REST Endpoints, Investigation.
+- **Ruchika Dingria (17% — Proactive Inactive Synthesis & Quality Assurance Specialist):** Validation, Win32 Idle Tracking Loop, "Dream & Scout" Proactive Synthesis Engine, Multi-Axis Affective Sentiment Classifier, 100-Case Empirical Benchmark Suite, Institutional Documentation, Formal Analysis.
+- **Prof. Geocey Shejy:** Supervision, Project Administration, Academic Mentorship, Technical Review, Institutional Oversight.
+
+---
+
 ## References
 
 1. T. Schick, J. Dwivedi-Yu, R. Dessì, R. Raileanu, M. Lomeli, L. Zettlemoyer, N. Cancedda, and T. Scialom, "Toolformer: Language models can teach themselves to use tools," in *Proc. 37th Conf. Neural Inf. Process. Syst. (NeurIPS)*, 2023.

@@ -1,3 +1,8 @@
+# Contributor: Jass Suraj Shivnani (Class D12B, Roll 50)
+# Role: Lead System Architect & Core Autonomous Runtime Lead (35% Contribution)
+# Subsystem: Native Win32 CUA Driver, GDI Screen Capture & Hardware Input Injection
+# Project: Dione (Group 19, University of Mumbai Capstone Project I)
+
 """Cua-driver backend (macOS, Windows, Linux): MCP over stdio to `cua-driver`. The async `mcp` SDK runs on a
 background loop (``cua_backend_session``); the same tool surface works on all three platforms, and per-host gaps
 (no DISPLAY, missing AT-SPI, TCC) surface via `hermes computer-use doctor` instead of failing silently. Install

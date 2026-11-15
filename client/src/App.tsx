@@ -1,4 +1,12 @@
+/**
+ * Contributor: Riya Sanjay Khialani (Class D12A, Roll 34)
+ * Role: Live Multimodal Audio Pipeline & Frontend Lead (30% Contribution)
+ * Subsystem: OpenClaw Frosted Glass UI Dashboard & AG-UI SSE Real-Time Event Client
+ * Project: Dione (Group 19, University of Mumbai Capstone Project I)
+ */
+
 import React, { useState, useEffect, useRef } from 'react';
+import { Moon } from 'lucide-react';
 import {
   Thread,
   Message,
@@ -66,6 +74,25 @@ export function App() {
     volume: 0,
     statusText: 'Live Voice + Gemini 3.8 Thinking Ready',
   });
+
+  const [isSleeping, setIsSleeping] = useState(false);
+  const [sleepArmed, setSleepArmed] = useState(false);
+  const sleepArmedRef = useRef(false);
+
+  const handleStartSleep = async () => {
+    setIsSleeping(true);
+    setSleepArmed(false);
+    sleepArmedRef.current = false;
+    try {
+      await fetch('/api/desktop/sleep/start', { method: 'POST' });
+    } catch (e) {
+      console.warn('Sleep start error:', e);
+    }
+    setTimeout(() => {
+      sleepArmedRef.current = true;
+      setSleepArmed(true);
+    }, 2200);
+  };
 
   const getGreeting = () => {
     const hr = new Date().getHours();
@@ -136,6 +163,59 @@ export function App() {
       localStorage.setItem(STORAGE_KEY_ACTIVE_THREAD, activeThreadId);
     } catch {}
   }, [activeThreadId]);
+
+  useEffect(() => {
+    if (!isSleeping) return;
+    const onUserActivity = async () => {
+      if (!sleepArmedRef.current) return;
+      setIsSleeping(false);
+      setSleepArmed(false);
+      sleepArmedRef.current = false;
+      try {
+        const res = await fetch('/api/desktop/sleep/wake?reason=pc_touch_activity', { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          const b = data.briefing;
+          if (b && b.email) {
+            const briefingMsg = {
+              id: 'briefing_' + Date.now(),
+              role: 'assistant',
+              content: `### 🌅 Morning Executive Briefing (Woken via PC Touch Activity)\n\n` +
+                       `**While you were away, Dione autonomously scouted your workstation communications.**\n\n` +
+                       `> 📬 **New Communication Received**\n` +
+                       `> **From:** ${b.email.sender} (${b.email.email})\n` +
+                       `> **Subject:** ${b.email.subject}\n` +
+                       `> **Summary:** "${b.email.snippet}"\n\n` +
+                       `---\n\n` +
+                       `**🤖 Prepared Contextual Response (Saved to Gmail Drafts):**\n\n` +
+                       `\`\`\`text\n${b.email.draft_reply}\n\`\`\`\n\n` +
+                       `*Sender and review commitments have been indexed into your personal Knowledge Graph.*`,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              sleepBriefing: {
+                draftId: b.email.draft_id,
+                status: b.email.status,
+                sender: b.email.sender,
+                email: b.email.email,
+                subject: b.email.subject,
+                draftReply: b.email.draft_reply,
+              }
+            };
+            setThreads(prev => prev.map(t => t.id === activeThreadId ? { ...t, messages: [...t.messages, briefingMsg as any] } : t));
+          }
+        }
+      } catch (err) {
+        console.warn('Wake error:', err);
+      }
+    };
+    window.addEventListener('mousemove', onUserActivity);
+    window.addEventListener('keydown', onUserActivity);
+    window.addEventListener('mousedown', onUserActivity);
+    return () => {
+      window.removeEventListener('mousemove', onUserActivity);
+      window.removeEventListener('keydown', onUserActivity);
+      window.removeEventListener('mousedown', onUserActivity);
+    };
+  }, [isSleeping, activeThreadId]);
 
   useEffect(() => {
     const hydrateFromServer = async () => {
@@ -496,29 +576,9 @@ export function App() {
           setActiveToolName('');
           setThreads(prev => prev.map(t => (
             t.id === activeThreadId
-              ? {
-                  ...t,
-                  messages: t.messages.map(m => {
-                    if (m.id !== assistantMsgId) return m;
-                    const finalizedToolCalls = m.toolCalls?.map(tc =>
-                      tc.status === 'running' ? { ...tc, status: 'completed' as const } : tc
-                    );
-                    const finalContent = m.content?.trim()
-                      ? m.content
-                      : (finalizedToolCalls && finalizedToolCalls.length > 0
-                          ? `Task completed successfully (${finalizedToolCalls.length} actions executed).`
-                          : 'Task completed, sir.');
-                    return {
-                      ...m,
-                      toolCalls: finalizedToolCalls,
-                      content: finalContent,
-                      isStreaming: false,
-                    };
-                  }),
-                }
+              ? { ...t, messages: t.messages.map(m => m.id === assistantMsgId ? { ...m, isStreaming: false } : m) }
               : t
           )));
-          handleCaptureScreenshot();
         },
         onError: (err) => {
           setIsAutonomousControlActive(false);
@@ -625,6 +685,8 @@ export function App() {
                 }}
                 isTurboMode={isTurboMode}
                 onToggleTurbo={() => setIsTurboMode(!isTurboMode)}
+                onStartSleep={handleStartSleep}
+                isSleeping={isSleeping}
               />
 
               <div className="flex-1 overflow-y-auto px-4 py-6 space-y-5 max-w-4xl w-full mx-auto">
@@ -736,6 +798,39 @@ export function App() {
         }}
         threadCount={threads.length}
       />
+
+      {/* Autonomous Inactive-State Sleep Overlay with PC Touch Wake Detection */}
+      {isSleeping && (
+        <div
+          onClick={async () => {
+            if (!sleepArmedRef.current) return;
+            setIsSleeping(false);
+            setSleepArmed(false);
+            sleepArmedRef.current = false;
+            try {
+              await fetch('/api/desktop/sleep/wake?reason=click', { method: 'POST' });
+            } catch (e) {}
+          }}
+          className="fixed inset-0 z-50 bg-[#06070c]/95 backdrop-blur-2xl flex flex-col items-center justify-center p-6 text-center select-none cursor-pointer"
+        >
+          <div className="relative mb-6">
+            <div className="w-24 h-24 rounded-3xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center shadow-2xl shadow-indigo-600/30 animate-pulse">
+              <Moon className="w-12 h-12 text-indigo-400" />
+            </div>
+            <div className="absolute -inset-2 rounded-3xl bg-indigo-500/10 blur-xl -z-10" />
+          </div>
+          <h2 className="text-2xl font-bold text-white tracking-tight mb-2">
+            Dione Autonomous Sleep & Scout Mode Active
+          </h2>
+          <p className="text-sm font-mono text-indigo-300/80 max-w-md mb-6 leading-relaxed">
+            Autonomous memory consolidation, knowledge graph indexing, and Gmail communications scouting are running.
+          </p>
+          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.04] border border-white/[0.08] text-xs font-mono text-slate-300">
+            <span className={`w-2 h-2 rounded-full ${sleepArmed ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
+            <span>{sleepArmed ? 'Touch mouse or press any key to wake' : 'Arming PC touch sensors (2.2s grace)...'}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

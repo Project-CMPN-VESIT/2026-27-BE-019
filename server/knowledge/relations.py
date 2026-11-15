@@ -4,6 +4,10 @@ Dione AI — Relationship Types for the Knowledge Graph
 Defines the types of edges (relationships) between entities.
 This is what makes the knowledge graph powerful — it's not just
 storing data, it's storing *connections* between data.
+
+Contributor: Khushi Sadhuramani (Class D12B, Roll 44)
+Role: Knowledge Graph & GraphRAG Memory Specialist (18% Contribution)
+Project: Dione (Group 19, University of Mumbai Capstone Project I)
 """
 
 from dataclasses import dataclass, field
@@ -50,6 +54,26 @@ class RelationType(Enum):
     DISCUSSED = "discussed"            # Topic mentioned in conversation
     PROMISED_TO = "promised_to"        # Commitment -> Person
     OWED_BY = "owed_by"                # Commitment -> Person
+
+    # System & Engineering Architecture Triples
+    CREATOR_OF = "creator_of"
+    WORKS_ON = "works_on"
+    POWERS = "powers"
+    INTEGRATES = "integrates"
+    USES = "uses"
+    OPERATES_ON = "operates_on"
+    CONNECTS_TO = "connects_to"
+    EMBEDS = "embeds"
+    CONTROLS = "controls"
+    RUNS = "runs"
+    FEATURES = "features"
+    EVALUATES = "evaluates"
+    MENTORS = "mentors"
+    ARCHITECTS = "architects"
+    IMPLEMENTS = "implements"
+    DESIGNS = "designs"
+    SPECIALIZES_IN = "specializes_in"
+    DEVELOPS = "develops"
 
 
 @dataclass

@@ -182,3 +182,42 @@ async def get_social_dossiers():
         except Exception as e:
             logger.error(f"[DesktopRoute] Dossiers error: {e}")
     return []
+
+
+@router.post("/sleep/start")
+async def start_sleep_mode(request: Request):
+    """Start manual Sleep Mode for live demonstration."""
+    dream_engine = getattr(request.app.state, "dream_engine", None)
+    if not dream_engine:
+        raise HTTPException(status_code=500, detail="DreamEngine not initialized")
+    res = await dream_engine.start_manual_sleep()
+    return res
+
+
+@router.post("/sleep/wake")
+async def wake_sleep_mode(request: Request, reason: str = "pc_touch_activity"):
+    """Wake up from Sleep Mode on mouse/keyboard touch and receive In-Chat Briefing."""
+    dream_engine = getattr(request.app.state, "dream_engine", None)
+    if not dream_engine:
+        raise HTTPException(status_code=500, detail="DreamEngine not initialized")
+    res = dream_engine.wake(reason=reason)
+    return res
+
+
+@router.post("/sleep/approve-draft")
+async def approve_sleep_draft(request: Request, draft_id: str = "", action: str = "send"):
+    """Approve & send, keep in drafts, or dismiss drafted email from In-Chat Briefing."""
+    dream_engine = getattr(request.app.state, "dream_engine", None)
+    if not dream_engine:
+        raise HTTPException(status_code=500, detail="DreamEngine not initialized")
+    res = await dream_engine.approve_draft(draft_id=draft_id, action=action)
+    return res
+
+
+@router.get("/sleep/status")
+async def get_sleep_status(request: Request):
+    """Get current Sleep Mode status."""
+    dream_engine = getattr(request.app.state, "dream_engine", None)
+    is_sleeping = getattr(dream_engine, "_in_dream_mode", False)
+    mode = getattr(dream_engine, "_current_mode", "active")
+    return {"is_sleeping": is_sleeping, "mode": mode}

@@ -1,3 +1,8 @@
+# Contributor: Jass Suraj Shivnani (Class D12B, Roll 50)
+# Role: Lead System Architect & Core Autonomous Runtime Lead (35% Contribution)
+# Subsystem: Computer Use Agent Tool Implementation & Step Execution
+# Project: Dione (Group 19, University of Mumbai Capstone Project I)
+
 from __future__ import annotations
 class _DummyLease:
     class HumanHasControl(Exception): pass

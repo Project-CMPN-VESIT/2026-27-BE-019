@@ -143,16 +143,22 @@ cd ../mobile/dione_app
 flutter run
 ```
 
-## 👥 Team
+## 👥 Project Team & Individual Contribution Matrix
 
-| Name | Email |
-|------|-------|
-| Jass Suraj Shivnani | 2023.jass.shivnani@ves.ac.in |
-| Riya Sanjay Khialani | 2023.riya.khialani@ves.ac.in |
-| Khushi Sadhuramani | 2023.khushi.sadhuramani@ves.ac.in |
-| Ruchika Dingria | 2023.ruchika.dingria@ves.ac.in |
+Developed as **Capstone Project - I (2025–26)** at **Vivekanand Education Society's Institute of Technology (VESIT)**, Department of Computer Engineering, affiliated with the **University of Mumbai**.
 
-**Guide:** Mrs. Geocey Shejy, Professor, Computer Engineering, V.E.S.I.T
+**Project Guide:** Mrs. Geocey Shejy, Assistant Professor, Department of Computer Engineering, VESIT
+
+### Comprehensive Work Distribution & Ownership (100% Breakdown)
+
+| Contributor | Class & Roll No. | Project Role | Contribution % | Primary Modules & Code Ownership | Key Deliverables & Research Responsibilities |
+| :--- | :--- | :--- | :---: | :--- | :--- |
+| **Jass Suraj Shivnani** | D12B, Roll 50 | **Lead System Architect & Core Runtime Lead** | **35%** | `server/core/engine.py`<br>`server/plugins/builtin/computer_use_plugin.py`<br>`server/core/safety.py`<br>`server/core/tool_repair.py`<br>`server/core/loop_detector.py` | • NousResearch Hermes ReAct Autonomous Execution Loop<br>• Win32 Dual `SendInput` / Ribbon Shape Diagonal Drag Engine<br>• Poset Permission Lattice & AST Command Sanitizer<br>• OpenClaw Tool-Call Repair & Arg Coercion Runtime<br>• System Architecture Section of Research Paper |
+| **Riya Sanjay Khialani** | D12A, Roll 34 | **Live Multimodal Audio & Frontend Engineering Lead** | **30%** | `server/api/routes/audio.py`<br>`server/llm/gemini_live_orchestrator.py`<br>`client/src/App.tsx`<br>`client/src/services/neuralAudio.ts`<br>`server/api/routes/ag_ui.py`<br>`server/plugins/integrations/` | • Full-Duplex 16kHz Bidirectional Gemini Live WebSocket Audio Pipeline<br>• OpenClaw Two-Tier Frosted Glass UI & Live Demo Deck<br>• AG-UI SSE Real-Time Streaming Bridge & Action Approval Modals<br>• Multi-Channel Integrations (Gmail, Calendar, Drive, WhatsApp, Telegram)<br>• Methodology & Live Voice Benchmarking Section |
+| **Khushi Sadhuramani** | D12B, Roll 44 | **Knowledge Graph & GraphRAG Memory Specialist** | **18%** | `server/knowledge/graph.py`<br>`server/knowledge/relations.py`<br>`server/knowledge/social_intelligence.py`<br>`server/api/routes/knowledge.py`<br>`client/src/components/KnowledgeGraphView.tsx` | • NetworkX 2-Hop Relational Multigraph Implementation<br>• Entity Disambiguation & Identity Resolution for Colliding Names<br>• Social Intelligence Engine & Contact Commitment Dossiers<br>• Knowledge Graph Visual REST Endpoints & UI Rendering<br>• Literature Review on GraphRAG & Entity Memory Models |
+| **Ruchika Dingria** | D12B, Roll 70 | **Proactive Inactive Synthesis & Quality Assurance Specialist** | **17%** | `server/proactive/dream_engine.py`<br>`server/bin/dione_research_benchmark.py`<br>`server/personality/profile.py`<br>`server/api/routes/desktop.py`<br>`docs/` Black Book Reports | • Autonomous Inactive-State "Dream & Scout" Engine<br>• Win32 Idle-Time Tracker & Genuine Gmail Scouting Pipeline<br>• Empirical 100-Case Evaluation Test Harness & Metric Auditing<br>• IEEE Research Paper Documentation & Overleaf LaTeX Formatting<br>• Turnitin Similarity & Black Book Compliance Verification |
+
+*Note: In accordance with project governance, primary engineering leads (Jass Shivnani & Riya Khialani, 65% combined) spearheaded the core execution kernel, native desktop automation, live multimodal streaming, and frontend interfaces, while secondary specialists (Khushi Sadhuramani & Ruchika Dingria, 35% combined) architected the relational memory multigraph, proactive background scout subsystem, empirical validation suite, and academic report compilation.*
 
 ## 📄 License
 

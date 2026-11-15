@@ -1,14 +1,17 @@
 """
-Dione AI — Closed-Loop Visual Goal Verifier & Reflection Engine (v4.0 Codex/UFO2 Edition)
-=========================================================================================
+Dione AI — Closed-Loop Visual Goal Verifier & Reflection Engine (v5.0 Open-CUA Edition)
+=======================================================================================
 Empirically inspects desktop screenshots, foreground window metadata, pre/post frame change,
 and active multi-step sub-goals to verify if the user's complete intent was achieved on screen.
 
-CRITICAL DESIGN RULE (Anti-Premature-Stop):
+CRITICAL DESIGN RULE (Anti-Premature-Stop & Anti-Hang):
 - Never report `ACHIEVED` after a mere preparatory step (`launch_app`, `capture_screen`,
   `list_open_windows`, `inspect_screen_vision`, `focus_app`) when the user's prompt also
-  requests an in-app interaction (such as clicking a button, queuing into a match, typing text,
-  searching, playing media, or submitting a form).
+  requests an in-app interaction (such as drawing a shape in Paint, clicking a button,
+  queuing into a match, typing text, searching, or playing media).
+- Immediately report `ACHIEVED` once the target interactive tool (`computer_draw_shape`,
+  `computer_drag`, `computer_locate_and_click`, `computer_click`, `computer_type`, etc.)
+  succeeds on the target window, preventing endless post-completion loops.
 """
 
 from __future__ import annotations
@@ -25,16 +28,15 @@ OBSERVATION_OR_PREP_TOOLS = {
     "launch_app",
 }
 
-# Physical interaction tools that actually click, type, drag, draw, or press keys inside a target window
+# Physical interaction tools that actually draw, drag, click, type, or invoke controls inside a target window
 INTERACTIVE_INPUT_TOOLS = {
+    "computer_draw_shape",
+    "computer_drag",
+    "computer_uia_action",
     "computer_locate_and_click",
     "computer_click",
     "computer_type",
     "computer_hotkey",
-    "computer_drag",
-    "computer_draw_circle",
-    "computer_draw_shape",
-    "computer_uia_action",
     "play_youtube_video",
 }
 
@@ -81,23 +83,42 @@ def prompt_requires_in_app_interaction(user_prompt: str) -> Tuple[bool, str]:
     """
     p = user_prompt.lower().strip()
 
-    # Queue / Matchmaking / Game start patterns
-    if any(k in p for k in ("queue", "deathmatch", "matchmaking", "start match", "find match", "hit play", "click play", "play valorant", "start game", "comp", "unrated", "swiftplay")):
-        return True, "Visually locate and click the mode selection / 'Play' / 'Start' / 'Queue' button inside the game or Riot Client using `computer_locate_and_click` or `inspect_screen_vision` + `computer_click`."
+    # 1. Drawing / MS Paint / Canvas shapes
+    for shape_kw in ("circle", "square", "rectangle", "triangle", "star", "heart", "smiley", "spiral", "oval"):
+        if shape_kw in p and any(v in p for v in ("draw", "make", "paint", "sketch", "create")):
+            return (
+                True,
+                f"Call `computer_draw_shape(shape='{shape_kw}', app='mspaint')` right now to draw the {shape_kw} directly on the Paint canvas.",
+            )
+    if any(k in p for k in ("draw ", "sketch ", "paint a ")):
+        return (
+            True,
+            "Call `computer_draw_shape(shape='circle', app='mspaint')` or `computer_drag(start_x=..., start_y=..., end_x=..., end_y=...)` to draw on the canvas.",
+        )
 
-    # Explicit click requests
+    # 2. Drag and drop
+    if "drag" in p:
+        return (
+            True,
+            "Call `computer_drag(start_x=..., start_y=..., end_x=..., end_y=...)` to perform the mouse drag.",
+        )
+
+    # 3. Queue / Matchmaking / Game start patterns
+    if any(k in p for k in ("queue", "deathmatch", "matchmaking", "start match", "find match", "hit play", "click play", "play valorant", "start game", "comp", "unrated", "swiftplay")):
+        return (
+            True,
+            "Visually locate and click the mode selection / 'Play' / 'Start' / 'Queue' button inside the game or Riot Client using `computer_locate_and_click` or `inspect_screen_vision` + `computer_click`.",
+        )
+
+    # 4. Explicit click requests
     click_m = re.search(r"\b(?:click|press|tap|select|hit)\s+(?:on\s+)?(?:the\s+)?([a-z0-9 _\-'\"]{2,35})", p)
     if click_m:
         target = click_m.group(1).strip()
         return True, f"Execute the click on '{target}' using `computer_locate_and_click(description='{target}')` or `computer_click`."
 
-    # Explicit typing / writing into an app
+    # 5. Explicit typing / writing into an app
     if any(k in p for k in ("type ", "write ", "enter text", "paste ", "search for ", "calculate ", "compute ")):
         return True, "Focus the target input area and enter the requested text/calculation using `computer_type(text=..., press_enter=True)` or `computer_hotkey`."
-
-    # Explicit drawing / canvas interaction requests
-    if any(k in p for k in ("draw", "paint a", "sketch", "circle", "rectangle", "square", "canvas", "shape")):
-        return True, "Draw the requested shape on the canvas using `computer_draw_shape(shape='circle', app='mspaint')` or `computer_draw_circle` or `computer_drag`."
 
     return False, ""
 
@@ -125,13 +146,17 @@ def verify_goal_on_desktop(
     is_fs = win.get("is_fullscreen", False)
     history = executed_tools_history or [tool_name]
 
-    # 0. Check if tool itself reported failure or inability to locate element
+    # 0. Fast-path success when computer_draw_shape or auto-routed drawing completed
     res_low = (tool_result or "").lower()
-    if any(err in res_low for err in ("could not locate", "could not launch", "error:", "failed to execute", "ok\": false")):
+    if "successfully drew" in res_low:
+        return True, "", ""
+
+    # 0.1 Check if tool itself reported failure or inability to locate element
+    if any(err in res_low for err in ("could not locate", "could not launch", "error:", "failed to execute", '"ok": false')):
         return (
             False,
             f"Tool `{tool_name}` reported an incomplete or failed outcome: {tool_result[:200]}",
-            "Call `inspect_screen_vision` to see the exact current screen layout and coordinates, then click the target using `computer_click(x=..., y=...)` or press the appropriate shortcut via `computer_hotkey`.",
+            "Call `inspect_screen_vision` to see the exact current screen layout and coordinates, then click/drag the target using `computer_click`, `computer_drag`, or `computer_draw_shape`.",
         )
 
     # 1. Verification for Video / YouTube / Full-Screen Playback
@@ -163,7 +188,6 @@ def verify_goal_on_desktop(
             )
 
         if wants_fullscreen and not is_fs:
-            # Check if 'f' or 'f11' was already pressed
             return (
                 False,
                 f"The video window '{win_title}' is not yet in fullscreen mode.",
@@ -184,9 +208,10 @@ def verify_goal_on_desktop(
 
     # 3. Verification for Application Launching / Window Focusing + In-App Multi-Step Actions
     app_keywords = {
+        "paint": ["paint", "mspaint"],
+        "mspaint": ["paint", "mspaint"],
         "notepad": ["notepad", "untitled"],
         "calculator": ["calc", "calculator"],
-        "paint": ["paint", "mspaint"],
         "chrome": ["chrome", "google chrome"],
         "edge": ["edge", "microsoft edge"],
         "code": ["visual studio code", "vs code", "code"],
@@ -211,7 +236,7 @@ def verify_goal_on_desktop(
             return (
                 False,
                 f"Target application '{app_name}' is not in the foreground yet. Current foreground window is '{win_title}'.",
-                f"Call `launch_app(app='{app_name}')` or `computer_use(action='focus_app', app='{app_name}')` to bring '{app_name}' to the foreground.",
+                f"Call `launch_app(app='{app_name}')` or `computer_draw_shape(app='{app_name}')` to bring '{app_name}' to the foreground.",
             )
 
     # 4. Multi-Step In-App Interaction Gate (CRITICAL: Prevents stopping after launch_app / capture_screen!)
@@ -219,29 +244,17 @@ def verify_goal_on_desktop(
     if needs_interaction:
         has_performed_interactive_input = any(
             t in INTERACTIVE_INPUT_TOOLS
-            or (t == "computer_use" and str(tool_params.get("action", "")).lower() in ("click", "double_click", "right_click", "type", "key", "drag", "draw_circle"))
+            or (t == "computer_use" and str(tool_params.get("action", "")).lower() in ("click", "double_click", "right_click", "drag", "draw_circle", "type", "key"))
+            or ("successfully drew" in res_low)
+            or ("dragged mouse" in res_low)
             for t in history
         )
         if not has_performed_interactive_input:
             return (
                 False,
-                f"You have only performed preparatory/focus actions ({history}), but you have NOT yet executed the requested in-app interaction for: '{user_prompt}'.",
+                f"You have only performed preparatory/focus actions ({history}), but you have NOT yet executed the requested in-app action for: '{user_prompt}'.",
                 f"DO NOT STOP HERE! {interaction_advice}",
             )
-
-        # If the user asked to queue / play a specific mode (e.g. deathmatch) and only 1 click happened so far
-        if any(k in prompt_low for k in ("deathmatch", "queue", "matchmaking", "start match", "find match")):
-            click_count = sum(
-                1 for t in history
-                if t in ("computer_locate_and_click", "computer_click")
-                or (t == "computer_use" and str(tool_params.get("action", "")).lower() in ("click", "double_click"))
-            )
-            if click_count < 2 and "inspect_screen_vision" not in history:
-                return (
-                    False,
-                    "In-game / launcher queue requires verifying that the lobby is open, selecting the requested mode (if applicable), and clicking the final 'Play' / 'Start' queue button.",
-                    "Call `inspect_screen_vision(question='Is the queue/matchmaking timer active, or is there a Play / Deathmatch / Start button visible to click?')` and click the button if needed.",
-                )
 
     # 5. Command / CLI Execution Verification
     if tool_name in ("run_command", "cmd", "powershell", "execute_script"):

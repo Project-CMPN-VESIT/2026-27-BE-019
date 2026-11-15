@@ -13,7 +13,8 @@ import {
   ShieldCheck,
   Radio,
   FileCode,
-  Layers
+  Layers,
+  Moon
 } from 'lucide-react';
 
 interface ChatHeaderProps {
@@ -34,6 +35,8 @@ interface ChatHeaderProps {
   onClearThread: () => void;
   isTurboMode: boolean;
   onToggleTurbo: () => void;
+  onStartSleep?: () => void;
+  isSleeping?: boolean;
 }
 
 export const ChatHeader: React.FC<ChatHeaderProps> = ({
@@ -54,6 +57,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   onClearThread,
   isTurboMode,
   onToggleTurbo,
+  onStartSleep,
+  isSleeping = false,
 }) => {
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const modelMenuRef = useRef<HTMLDivElement>(null);
@@ -146,6 +151,22 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 
       {/* Right Action Controls */}
       <div className="flex items-center gap-2">
+        {/* Manual Professor Demo Sleep Mode Switch */}
+        {onStartSleep && (
+          <button
+            onClick={onStartSleep}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-all ${
+              isSleeping
+                ? 'bg-indigo-600/30 border-indigo-500/60 text-indigo-200 shadow-md shadow-indigo-600/30 animate-pulse'
+                : 'bg-white/[0.02] border-white/[0.06] text-slate-400 hover:text-indigo-300 hover:bg-white/[0.05]'
+            }`}
+            title="Start Autonomous Inactive Sleep & Scout Mode"
+          >
+            <Moon className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Sleep Mode</span>
+          </button>
+        )}
+
         {/* Turbo Mode Pill */}
         <button
           onClick={onToggleTurbo}

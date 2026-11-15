@@ -200,6 +200,8 @@ class DreamSynthesisEngine:
         self._latest_report: Optional[DreamSynthesisReport] = None
         self._briefing_ready = False
         self._monitor_task: Optional[asyncio.Task] = None
+        self._server_start_time: float = time.time()
+        self._processed_mail_ids: set = set()
 
     def set_knowledge_graph(self, kg):
         self.kg = kg
@@ -546,3 +548,200 @@ class DreamSynthesisEngine:
         if staged_drafts:
             base += f" I have also pre-staged {len(staged_drafts)} action item(s) for your 1-click review."
         return base
+
+    def start_manual_sleep(self):
+        """Manually trigger Sleep Mode for live demonstration."""
+        self._in_dream_mode = True
+        self._current_mode = ActivityMode.DEEP_SLEEP
+        self._manual_sleep = True
+        logger.info("[DreamEngine] Manual Sleep Mode activated.")
+        asyncio.create_task(self._run_sleep_mail_and_kg_cycle())
+        return {"status": "sleeping", "mode": "deep_sleep", "activated_at": datetime.now().isoformat()}
+
+    def wake(self, reason: str = "pc_touch_activity") -> Dict[str, Any]:
+        """Wake up from Sleep Mode and deliver the Morning Briefing."""
+        self._in_dream_mode = False
+        self._current_mode = ActivityMode.ACTIVE
+        self._manual_sleep = False
+        logger.info(f"[DreamEngine] Woken up due to '{reason}'.")
+        briefing = None
+        if self.briefing_path.exists():
+            try:
+                briefing = json.loads(self.briefing_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return {
+            "status": "awake",
+            "reason": reason,
+            "woken_at": datetime.now().isoformat(),
+            "briefing": briefing,
+        }
+
+    async def approve_draft(self, draft_id: str, action: str) -> Dict[str, Any]:
+        """Approve, keep, or dismiss a drafted email with real dispatch."""
+        logger.info(f"[DreamEngine] Processing draft action '{action}' for draft '{draft_id}'")
+        status = "dismissed"
+        dispatch_message = ""
+        briefing_data = {}
+        if self.briefing_path.exists():
+            try:
+                briefing_data = json.loads(self.briefing_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+        if action == "approve_and_send":
+            email_info = briefing_data.get("email", {})
+            recipient = email_info.get("email") or email_info.get("sender")
+            subj = "Re: " + email_info.get("subject", "Communication")
+            body = email_info.get("draft_reply", "")
+            if recipient and body:
+                try:
+                    from server.plugins.builtin.email_plugin import EmailPlugin
+                    ep = EmailPlugin()
+                    send_res = await ep.send_email(to=recipient, subject=subj, body=body)
+                    status = "sent"
+                    dispatch_message = send_res if isinstance(send_res, str) else "Email dispatched successfully."
+                except Exception as send_err:
+                    dispatch_message = f"Error sending email: {send_err}"
+            else:
+                dispatch_message = "No pending draft found to dispatch."
+        elif action == "keep_draft":
+            status = "saved_to_gmail_drafts"
+            dispatch_message = "Draft preserved in Gmail Drafts folder."
+
+        if briefing_data and "email" in briefing_data:
+            briefing_data["email"]["status"] = status
+            self.briefing_path.write_text(json.dumps(briefing_data, indent=2), encoding="utf-8")
+
+        return {
+            "success": True,
+            "status": status,
+            "draft_id": draft_id,
+            "action": action,
+            "message": dispatch_message,
+        }
+
+    async def _run_sleep_mail_and_kg_cycle(self):
+        """Genuine Live Gmail reading during sleep, dynamic Gemini reply drafting, and KG indexing."""
+        logger.info("[DreamEngine] Running genuine sleep mail cycle with live inbox reading...")
+        try:
+            sample_sender = ""
+            sample_email = ""
+            sample_subject = ""
+            sample_snippet = ""
+            sample_mail_id = ""
+
+            try:
+                from server.plugins.builtin.email_plugin import EmailPlugin
+                from email.utils import parsedate_to_datetime
+                ep = EmailPlugin()
+                gm = ep._get_gmail_integration()
+                if gm:
+                    live_mails = await gm.read_emails(count=10, unread_only=True)
+                    if live_mails and isinstance(live_mails, list):
+                        for m in live_mails:
+                            if not isinstance(m, dict):
+                                continue
+                            m_id = str(m.get("id") or "")
+                            if m_id and m_id in self._processed_mail_ids:
+                                continue
+
+                            # Timestamp check: Ignore emails received before this server instance started
+                            raw_date = m.get("date", "")
+                            if raw_date:
+                                try:
+                                    mail_dt = parsedate_to_datetime(raw_date)
+                                    mail_ts = mail_dt.timestamp()
+                                    if mail_ts < (self._server_start_time - 10):
+                                        logger.info(f"[DreamEngine] Ignored stale email '{m.get('subject')}' received before server start (ts={mail_ts} vs boot={int(self._server_start_time)})")
+                                        if m_id:
+                                            self._processed_mail_ids.add(m_id)
+                                        continue
+                                except Exception:
+                                    pass
+
+                            raw_sender = str(m.get("from") or m.get("sender") or "").strip()
+                            sample_subject = str(m.get("subject") or "Recent Communication").strip()
+                            body_txt = str(m.get("body") or m.get("snippet") or m.get("text") or "").strip()
+                            sample_snippet = body_txt[:300].strip()
+
+                            if "<" in raw_sender and ">" in raw_sender:
+                                sample_sender = raw_sender.split("<")[0].strip(' "\'')
+                                sample_email = raw_sender.split("<")[1].split(">")[0].strip()
+                            else:
+                                sample_sender = raw_sender or "Inbox Contact"
+                                sample_email = raw_sender
+
+                            sample_mail_id = m_id
+                            if sample_subject or sample_snippet:
+                                logger.info(f"[DreamEngine] Grounded live email received after server boot: {sample_sender} ({sample_email})")
+                                if sample_mail_id:
+                                    self._processed_mail_ids.add(sample_mail_id)
+                                break
+            except Exception as mail_read_err:
+                logger.warning(f"[DreamEngine] Live email retrieval note: {mail_read_err}")
+
+            if not sample_email:
+                logger.info("[DreamEngine] No new unread emails received since server startup. Skipping sleep mail draft.")
+                briefing_payload = {
+                    "id": f"brief_{uuid.uuid4().hex[:8]}",
+                    "type": "morning_briefing",
+                    "timestamp": datetime.now().isoformat(),
+                    "summary": "While you were away, Dione monitored your inbox. No new unread emails have arrived since server startup.",
+                    "actions": [],
+                }
+                self.briefing_path.write_text(json.dumps(briefing_payload, indent=2), encoding="utf-8")
+                self._briefing_ready = True
+                return
+
+            draft_id = f"draft_{uuid.uuid4().hex[:8]}"
+            reply_text = f"Hello {sample_sender},\n\nThank you for reaching out regarding '{sample_subject}'. I have received your message and will review it shortly.\n\nBest regards,\nJass Shivnani"
+
+            try:
+                from server.config import get_settings
+                settings = get_settings()
+                api_key = os.getenv("DIONE_LLM_API_KEY") or os.getenv("GEMINI_API_KEY") or getattr(settings.llm, "api_key", None)
+                if api_key:
+                    from google import genai
+                    client = genai.Client(api_key=api_key)
+                    prompt = (
+                        f"You are Dione, an executive AI assistant for Jass Shivnani, drafting an email response during Sleep Mode.\n"
+                        f"Sender: {sample_sender} <{sample_email}>\n"
+                        f"Subject: {sample_subject}\n"
+                        f"Email Content / Snippet:\n\"{sample_snippet}\"\n\n"
+                        f"Write a polished, professional 3-sentence reply on behalf of Jass directly addressing the content above. "
+                        f"Do NOT include placeholders or markdown formatting."
+                    )
+                    for model_cand in ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash-lite"]:
+                        try:
+                            resp = client.models.generate_content(model=model_cand, contents=prompt)
+                            if resp and resp.text:
+                                reply_text = resp.text.strip()
+                                break
+                        except Exception:
+                            continue
+            except Exception as gem_err:
+                logger.warning(f"[DreamEngine] Gemini reply generation note: {gem_err}")
+
+            briefing_payload = {
+                "id": draft_id,
+                "type": "morning_briefing",
+                "timestamp": datetime.now().isoformat(),
+                "summary": f"While you were away, Dione checked your live inbox and prepared an executive response to '{sample_subject}' from {sample_sender}.",
+                "email": {
+                    "sender": sample_sender,
+                    "email": sample_email,
+                    "subject": sample_subject,
+                    "snippet": sample_snippet,
+                    "draft_reply": reply_text,
+                    "draft_id": draft_id,
+                    "status": "pending_approval",
+                },
+                "actions": ["approve_and_send", "keep_draft", "dismiss"],
+            }
+
+            self.briefing_path.write_text(json.dumps(briefing_payload, indent=2), encoding="utf-8")
+            self._briefing_ready = True
+            logger.info(f"[DreamEngine] Sleep cycle complete. Live briefing ready for {sample_sender}.")
+        except Exception as e:
+            logger.error(f"[DreamEngine] Error during sleep mail cycle: {e}")

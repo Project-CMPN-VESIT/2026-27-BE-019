@@ -1,226 +1,220 @@
 """
-Dione AI — Hermes Scripted Turn Prelude (v7.0 Professor Demo Edition)
-======================================================================
-Ported from NousResearch/hermes-agent/agent/turn_scripted_prelude.py.
+Dione AI — Hermes Scripted Prelude & Deterministic Live-Demo Fast-Path (`turn_scripted_prelude.py`)
+===================================================================================================
+Ported from NousResearch/hermes-agent (`agent/turn_scripted_prelude.py`).
 
-Executes unambiguous single and multi-step live-demo commands BEFORE the first model
-call directly through DioneEngine's wrapped tool callables (ACTING -> OBSERVING +
-live desktop screenshot capture), eliminating LLM hesitation, redundant tool calls,
-and 429 rate-limit stalls.
+Why this exists:
+During a live presentation or professor review, when the user issues a clear desktop, media,
+or workspace command (including multi-step compound prompts like "open paint and draw a circle and a star",
+"open notepad and write hello professor", "play interstellar on youtube", "check my system info",
+"search my google drive", "show my recent google photos", or "use execute_code to..."),
+waiting on multiple LLM round-trips risks:
+  1. Model hesitation or redundant tool calls,
+  2. API rate-limit (429) delays, or
+  3. Empty post-tool text responses that leave the UI on "Thinking...".
+
+`run_demo_scripted_prelude` runs BEFORE the first model call:
+- Parses single or multi-clause commands into a deterministic sequence of `(tool_name, args)` calls.
+- Invokes the engine's wrapped tool callables directly so every `EngineStep` (`ACTING` -> `OBSERVING`),
+  live screenshot capture, and UI activity card streams to the frontend in real time.
+- Returns `(prelude_ran, is_fully_satisfied, tool_events_log, synthesized_response)` so deterministic
+  desktop/demo commands finish in a single butter-smooth pass!
 """
 
 from __future__ import annotations
 
-import asyncio
-import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
+from loguru import logger
 
-logger = logging.getLogger("dione.scripted_prelude")
-
-ALL_SHAPES = [
-    "circle", "star", "heart", "house", "smiley", "square",
-    "triangle", "diamond", "arrow", "spiral", "rectangle", "line"
-]
+from server.core.tool_repair import synthesize_butter_smooth_summary
 
 
-def try_match_scripted_prelude(user_prompt: str) -> Optional[List[Tuple[str, Dict[str, Any]]]]:
+_PAINT_SHAPES = (
+    "circle",
+    "square",
+    "rectangle",
+    "triangle",
+    "star",
+    "heart",
+    "smiley",
+    "spiral",
+    "line",
+    "house",
+    "arrow",
+    "diamond",
+)
+
+_APP_ALIASES = {
+    "paint": "mspaint",
+    "ms paint": "mspaint",
+    "mspaint": "mspaint",
+    "notepad": "notepad",
+    "calculator": "calc",
+    "calc": "calc",
+    "spotify": "spotify",
+    "chrome": "chrome",
+    "google chrome": "chrome",
+    "edge": "msedge",
+    "microsoft edge": "msedge",
+    "vs code": "code",
+    "vscode": "code",
+    "file explorer": "explorer",
+    "explorer": "explorer",
+    "terminal": "wt",
+    "powershell": "powershell",
+}
+
+
+def plan_scripted_prelude_steps(user_message: str) -> Tuple[List[Tuple[str, Dict[str, Any]]], bool]:
     """
-    Analyzes the user's prompt to check if it matches an unambiguous live-demo command.
-    Returns an ordered list of (tool_name, tool_params) if matched, or None.
+    Analyze `user_message` and return `(steps, is_complete_fast_path)`.
+    If `steps` is non-empty, each item is `(tool_name, tool_kwargs)`.
+    `is_complete_fast_path` is True when executing these steps completely fulfills the user's prompt
+    without needing an additional multi-turn LLM loop.
     """
-    if not user_prompt or not isinstance(user_prompt, str):
-        return None
+    raw = (user_message or "").strip()
+    low = raw.lower()
+    if not low:
+        return [], False
 
-    p_raw = user_prompt.strip()
-    p_low = p_raw.lower()
+    steps: List[Tuple[str, Dict[str, Any]]] = []
 
-    # -----------------------------------------------------------------------
-    # Scenario 1: MS Paint Single & Multi-Shape Studio
-    # -----------------------------------------------------------------------
-    paint_triggers = ("paint", "draw", "sketch", "scribble", "doodle")
-    if any(k in p_low for k in paint_triggers):
-        # Extract all shapes mentioned
-        detected_shapes: List[str] = []
-        for s in ALL_SHAPES:
-            # Match word boundary
-            if re.search(r"\b" + re.escape(s) + r"\b", p_low):
-                detected_shapes.append(s)
-            elif s == "smiley" and ("face" in p_low or "smile" in p_low):
-                detected_shapes.append("smiley")
-            elif s == "rectangle" and "box" in p_low and "square" not in detected_shapes:
-                detected_shapes.append("rectangle")
+    # 1. MS Paint / Canvas Shape Drawing (handles single or multiple shapes, e.g. "open paint and draw a circle and a star")
+    has_draw_verb = any(v in low for v in ("draw", "make", "sketch", "paint", "create a ", "plot a "))
+    matched_shapes = [sh for sh in _PAINT_SHAPES if re.search(rf"\b{sh}s?\b", low)]
+    if "face" in low and "smiley" not in matched_shapes:
+        matched_shapes.append("smiley")
 
-        if detected_shapes:
-            # Preserve order of appearance in prompt
-            ordered_shapes = sorted(
-                list(set(detected_shapes)),
-                key=lambda s: p_low.find(s) if p_low.find(s) != -1 else 999
-            )
+    if matched_shapes and (has_draw_verb or "paint" in low or "canvas" in low):
+        n_shapes = len(matched_shapes)
+        for idx, sh in enumerate(matched_shapes):
+            offset_x = 0
+            if n_shapes == 2:
+                offset_x = 760 if idx == 0 else 1160
+            elif n_shapes >= 3:
+                offset_x = 660 + (idx * 300)
+            steps.append((
+                "computer_draw_shape",
+                {
+                    "shape": sh,
+                    "center_x": offset_x,
+                    "center_y": 0,
+                    "radius": 130 if n_shapes == 1 else 100,
+                    "app": "mspaint",
+                },
+            ))
+        notepad_match = re.search(r"notepad\s+and\s+(?:write|type)\s+[\"']?([^\"'\n]+)[\"']?", raw, re.IGNORECASE)
+        if notepad_match:
+            steps.append(("launch_app", {"app": "notepad"}))
+            steps.append(("computer_type", {"text": notepad_match.group(1).strip(), "press_enter": True}))
+        return steps, True
 
-            calls: List[Tuple[str, Dict[str, Any]]] = [
-                ("launch_app", {"app": "mspaint"})
-            ]
+    # 2. Open Notepad and type/write text: "open notepad and write/type ..."
+    np_write = re.search(
+        r"(?:open|launch|start|in)\s+notepad\s+(?:and\s+)?(?:write|type|enter|put)\s+[\"']?(.+?)[\"']?$",
+        raw,
+        re.IGNORECASE,
+    )
+    if np_write:
+        text_to_type = np_write.group(1).strip()
+        steps.append(("launch_app", {"app": "notepad"}))
+        steps.append(("computer_type", {"text": text_to_type, "press_enter": True}))
+        return steps, True
 
-            num_shapes = len(ordered_shapes)
-            if num_shapes == 1:
-                # Center placement
-                calls.append((
-                    "computer_draw_shape",
-                    {
-                        "shape": ordered_shapes[0],
-                        "center_x": 700,
-                        "center_y": 500,
-                        "radius": 120,
-                        "app": "mspaint",
-                    }
-                ))
-            elif num_shapes == 2:
-                # Two shapes horizontally spaced
-                calls.append((
-                    "computer_draw_shape",
-                    {
-                        "shape": ordered_shapes[0],
-                        "center_x": 520,
-                        "center_y": 520,
-                        "radius": 95,
-                        "app": "mspaint",
-                    }
-                ))
-                calls.append((
-                    "computer_draw_shape",
-                    {
-                        "shape": ordered_shapes[1],
-                        "center_x": 880,
-                        "center_y": 520,
-                        "radius": 95,
-                        "app": "mspaint",
-                    }
-                ))
-            else:
-                # 3+ shapes: spread across canvas
-                step_x = 760 // max(1, (num_shapes - 1))
-                for i, s in enumerate(ordered_shapes):
-                    cx = 400 + i * step_x
-                    calls.append((
-                        "computer_draw_shape",
-                        {
-                            "shape": s,
-                            "center_x": cx,
-                            "center_y": 520,
-                            "radius": max(60, 110 - num_shapes * 12),
-                            "app": "mspaint",
-                        }
-                    ))
+    # 3. Play YouTube Video: "play <query> on youtube" or "open youtube and play <query>"
+    yt_match = (
+        re.search(r"play\s+[\"']?(.+?)[\"']?\s+on\s+youtube", raw, re.IGNORECASE)
+        or re.search(r"youtube\s+and\s+(?:play|search(?:\s+for)?)\s+[\"']?(.+?)[\"']?$", raw, re.IGNORECASE)
+    )
+    if yt_match:
+        q = yt_match.group(1).strip()
+        q = re.sub(r"\s+in\s+full\s*screen.*$", "", q, flags=re.IGNORECASE).strip()
+        fullscreen = "fullscreen" in low or "full screen" in low
+        steps.append(("play_youtube_video", {"query": q, "fullscreen": fullscreen}))
+        return steps, True
 
-            logger.info(f"[ScriptedPrelude] Matched Paint Studio with shapes: {ordered_shapes}")
-            return calls
-
-    # -----------------------------------------------------------------------
-    # Scenario 2: Notepad + Live Typing
-    # -----------------------------------------------------------------------
-    if "notepad" in p_low and any(k in p_low for k in ("write", "type", "open", "note", "create")):
-        # Extract the content to write
-        text_to_write = "Dione AI v7.0 Professor Demo Edition — Butter-Smooth Operational"
-        m = re.search(r'(?:write|type)\s+(?:["\'](.*?)["\']|(?:that|this|the\s+following[:\s]?\s*)(.*?)$)', p_raw, re.I)
-        if m:
-            extracted = (m.group(1) or m.group(2) or "").strip()
-            if extracted and len(extracted) > 3:
-                text_to_write = extracted
-        elif "note" in p_low:
-            sub = re.sub(r'^(?:open\s+)?notepad\s+(?:and\s+)?(?:write\s+)?', '', p_raw, flags=re.I).strip()
-            if sub and len(sub) > 3:
-                text_to_write = sub
-
-        return [
-            ("launch_app", {"app": "notepad"}),
-            ("computer_type", {"text": text_to_write, "press_enter": True})
-        ]
-
-    # -----------------------------------------------------------------------
-    # Scenario 3: Hermes Programmatic Tool Calling (execute_code)
-    # -----------------------------------------------------------------------
-    if ("execute_code" in p_low or "ptc" in p_low or "python sandbox" in p_low) or (
-        "execute code" in p_low and any(k in p_low for k in ("workspace", "directory", "summarize", "list"))
-    ):
-        code_snippet = (
-            "import os\n"
-            "print('=== Dione v7.0 Workspace Analysis ===')\n"
-            "for root, dirs, files in os.walk('.'):\n"
-            "    dirs[:] = [d for d in dirs if d not in ('.git', '.venv', '__pycache__', 'node_modules', 'client/dist')]\n"
-            "    if len(files) > 0:\n"
-            "        print(f'  {root} -> {len(files)} files')\n"
-            "    if len(root.split(os.sep)) > 2: break\n"
+    # 4. Hermes Programmatic Tool Calling (`execute_code`) demo prompt
+    if "execute_code" in low and ("workspace" in low or "list" in low or "summarize" in low):
+        demo_ptc_script = (
+            "from hermes_tools import list_directory, json_parse\n"
+            "import platform\n"
+            "listing = list_directory('.')\n"
+            "print('=== Hermes PTC Live Workspace Audit ===')\n"
+            "print(f'Host OS: {platform.system()} {platform.release()} ({platform.machine()})')\n"
+            "print(str(listing)[:900])\n"
         )
-        return [
-            ("execute_code", {"code": code_snippet, "timeout": 15})
-        ]
+        steps.append(("execute_code", {"code": demo_ptc_script, "timeout": 30}))
+        return steps, True
 
-    # -----------------------------------------------------------------------
-    # Scenario 4: Google Drive & Google Photos Unified Query
-    # -----------------------------------------------------------------------
-    if ("google drive" in p_low or "drive" in p_low) and ("photos" in p_low or "photo" in p_low):
-        return [
-            ("google_drive_search", {"query": "type:file", "page_size": 5}),
-            ("google_photos_search", {"query": "recent", "page_size": 5})
-        ]
-    elif "google drive" in p_low or ("drive" in p_low and any(k in p_low for k in ("search", "find", "list", "files"))):
-        return [
-            ("google_drive_search", {"query": "type:file", "page_size": 5})
-        ]
-    elif "google photos" in p_low or ("photos" in p_low and any(k in p_low for k in ("search", "find", "list", "recent"))):
-        return [
-            ("google_photos_search", {"query": "recent", "page_size": 5})
-        ]
+    # 5. Google Drive & Google Photos demo prompts
+    has_drive = "google drive" in low or "my drive" in low
+    has_photos = "google photos" in low or "my photos" in low or "recent photos" in low
+    if (has_drive or has_photos) and any(v in low for v in ("search", "list", "show", "check", "recent", "files")):
+        if has_drive:
+            steps.append(("google_drive_search", {"query": "", "max_results": 8}))
+        if has_photos:
+            steps.append(("google_photos_list", {"page_size": 8}))
+        if steps:
+            return steps, True
 
-    # -----------------------------------------------------------------------
-    # Scenario 5: YouTube Media Playback
-    # -----------------------------------------------------------------------
-    if ("youtube" in p_low or "play" in p_low) and ("youtube" in p_low or "watch" in p_low or "song" in p_low or "lofi" in p_low):
-        clean_q = re.sub(r'\b(?:open\s+yt\s+|open\s+youtube\s+(?:and\s+)?|play\s+|on\s+youtube|in\s+full\s*screen)\b', '', p_raw, flags=re.I).strip()
-        clean_q = re.sub(r'["\']', '', clean_q).strip()
-        if not clean_q:
-            clean_q = "lofi hip hop radio beats to relax study to"
+    # 6. Simple standalone app launch: "open/launch/start paint/notepad/calculator/spotify/chrome/vscode"
+    app_only = re.match(
+        r"^(?:please\s+)?(?:can\s+you\s+)?(?:open|launch|start|focus)\s+(ms\s*paint|mspaint|paint|notepad|calculator|calc|spotify|google\s+chrome|chrome|microsoft\s+edge|edge|vs\s*code|vscode|file\s+explorer|explorer|terminal)\s*[.!]?$",
+        low,
+    )
+    if app_only:
+        app_key = re.sub(r"\s+", " ", app_only.group(1).strip())
+        target_app = _APP_ALIASES.get(app_key, app_key)
+        steps.append(("launch_app", {"app": target_app}))
+        return steps, True
 
-        return [
-            ("play_youtube_video", {"query": clean_q, "fullscreen": True})
-        ]
+    # 7. Take a desktop screenshot / capture screen
+    if re.match(r"^(?:please\s+)?(?:take|capture|grab|show)\s+(?:a\s+)?(?:desktop\s+)?(?:screenshot|screen\s*capture|screen)\s*[.!]?$", low):
+        steps.append(("capture_screen", {}))
+        return steps, True
 
-    # -----------------------------------------------------------------------
-    # Scenario 6: System Info / Telemetry
-    # -----------------------------------------------------------------------
-    if any(k in p_low for k in ("system info", "hardware status", "telemetry", "check my system", "gpu status", "cpu status")):
-        return [
-            ("system_info", {})
-        ]
+    # 8. Check system info / hardware telemetry
+    if re.search(r"\b(?:check|show|get|what\s+is)\s+(?:my\s+)?(?:system\s+info|hardware\s+info|cpu\s+and\s+ram|workstation\s+status)\b", low):
+        steps.append(("system_info", {}))
+        return steps, True
 
-    # -----------------------------------------------------------------------
-    # Scenario 7: Screen Capture / Screenshot
-    # -----------------------------------------------------------------------
-    if any(k in p_low for k in ("take a screenshot", "capture screen", "screen capture", "show desktop")):
-        return [
-            ("capture_screen", {})
-        ]
+    return [], False
 
-    # -----------------------------------------------------------------------
-    # Scenario 8: Common App Launching
-    # -----------------------------------------------------------------------
-    app_launch_map = {
-        "calculator": "calculator",
-        "calc": "calculator",
-        "spotify": "spotify",
-        "chrome": "chrome",
-        "browser": "chrome",
-        "edge": "edge",
-        "vs code": "code",
-        "vscode": "code",
-        "terminal": "terminal",
-        "explorer": "explorer",
-    }
-    for trigger, target in app_launch_map.items():
-        if re.search(r"\b(?:open|launch|start)\s+" + re.escape(trigger) + r"\b", p_low):
-            return [
-                ("launch_app", {"app": target})
-            ]
 
-    return None
+async def run_demo_scripted_prelude(
+    user_message: str,
+    callable_map: Dict[str, Callable],
+) -> Tuple[bool, bool, List[Dict[str, Any]], str]:
+    """
+    Execute any deterministic scripted prelude steps using `callable_map` (the wrapped engine tools).
+    Returns `(prelude_ran, is_complete_fast_path, tool_events_log, synthesized_summary)`.
+    """
+    steps, is_complete = plan_scripted_prelude_steps(user_message)
+    if not steps:
+        return False, False, [], ""
+
+    tool_events_log: List[Dict[str, Any]] = []
+    for tool_name, kwargs in steps:
+        fn = callable_map.get(tool_name)
+        if not fn:
+            logger.debug(f"[ScriptedPrelude] Tool '{tool_name}' not in callable_map; skipping prelude step.")
+            return False, False, [], ""
+        try:
+            logger.info(f"[ScriptedPrelude] Executing deterministic step: {tool_name}({kwargs})")
+            res = await fn(**kwargs)
+            tool_events_log.append({
+                "tool": tool_name,
+                "params": kwargs,
+                "result": str(res),
+            })
+        except Exception as exc:
+            logger.warning(f"[ScriptedPrelude] Step {tool_name} raised {exc}")
+            tool_events_log.append({
+                "tool": tool_name,
+                "params": kwargs,
+                "result": f"Error: {exc}",
+            })
+
+    summary = synthesize_butter_smooth_summary(user_message, tool_events_log)
+    return True, is_complete, tool_events_log, summary

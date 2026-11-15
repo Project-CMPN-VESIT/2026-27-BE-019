@@ -372,6 +372,17 @@ Query → Graph \+ Memory Retrieval → Sentiment Analysis → Action via Plugin
 
 *"Evolving Dione into a fully autonomous, privacy-first digital companion across all aspects of life."*
 
+## **Team Contribution & Work Distribution Matrix**
+
+| Student Name | Roll No. | Subsystem Ownership | Contribution | Key Responsibilities |
+| :--- | :--- | :--- | :---: | :--- |
+| **Jass Suraj Shivnani** | **D12B (50)** | **Lead System Architect & Core Autonomous Runtime** | **35%** | ReAct Execution Loop, CUA Win32 Desktop Actuation, Poset Lattice Security Kernel, Tool Self-Healing AST Parser. |
+| **Riya Sanjay Khialani** | **D12A (34)** | **Live Multimodal Audio Pipeline & Frontend Lead** | **30%** | Full-Duplex 16kHz Gemini Live Audio Bridge, OpenClaw Frosted Glass UI, AG-UI SSE Protocol, Google Workspace Cloud Integrations. |
+| **Khushi Sadhuramani** | **D12B (44)** | **Knowledge Graph & GraphRAG Memory Specialist** | **18%** | NetworkX 2-Hop Multigraph, Entity Resolution & Disambiguation, Knapsack Context Selection, ChromaDB Vector Sync. |
+| **Ruchika Dingria** | **D12B (70)** | **Proactive Inactive Synthesis & QA Specialist** | **17%** | Win32 Idle Tracker, "Dream & Scout" Proactive Inactive Engine, Affective Sentiment Modeling, 100-Case Benchmark Suite. |
+
+*"A balanced, multidisciplinary engineering collaboration achieving full-system sovereignty."*
+
 ## **Conclusion**
 
 Dione reimagines the future of AI assistants by shifting intelligence from the cloud to the user's device. It combines local LLMs, knowledge graphs, sentiment analysis, and agentic execution to create a system that not only responds, but understands, reasons, and acts.

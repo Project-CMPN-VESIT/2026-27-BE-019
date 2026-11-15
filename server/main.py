@@ -1,3 +1,8 @@
+# Contributor: Jass Suraj Shivnani (Class D12B, Roll 50)
+# Role: Lead System Architect & Core Autonomous Runtime Lead (35% Contribution)
+# Subsystem: FastAPI Server Lifecycle, Dynamic Middleware & Process Architecture
+# Project: Dione (Group 19, University of Mumbai Capstone Project I)
+
 """
 ╔══════════════════════════════════════════════════════════╗
 ║                      DIONE AI                            ║

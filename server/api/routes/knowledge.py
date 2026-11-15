@@ -1,3 +1,8 @@
+# Contributor: Khushi Sadhuramani (Class D12B, Roll 44)
+# Role: Knowledge Graph & GraphRAG Memory Specialist (18% Contribution)
+# Subsystem: Knowledge Graph REST API & Graph Visualization Endpoints
+# Project: Dione (Group 19, University of Mumbai Capstone Project I)
+
 """
 Dione AI — Knowledge Graph Routes
 
@@ -120,3 +125,10 @@ async def knowledge_stats(request: Request):
     """Get knowledge graph statistics."""
     kg = request.app.state.knowledge
     return kg.get_stats()
+
+
+@router.get("/graph")
+async def get_visual_graph(request: Request, limit: int = 100):
+    """Return resolved nodes and semantic relationship triples for the graph visualization."""
+    kg = request.app.state.knowledge
+    return kg.export_visual_graph(limit=limit)

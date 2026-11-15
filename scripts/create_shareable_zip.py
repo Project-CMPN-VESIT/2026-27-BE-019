@@ -35,6 +35,7 @@ INCLUDE_ROOT_FILES = [
     "run_native_app.bat",
     "README.md",
     "AGENTS.md",
+    "SOUL.md",
     "requirements.txt",
     ".env.example",
     "client/package.json",

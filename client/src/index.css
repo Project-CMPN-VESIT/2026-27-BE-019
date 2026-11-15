@@ -37,3 +37,14 @@ body {
 pre, code {
   font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
 }
+
+:root {
+  --bg: #0e1015;
+  --bg-accent: #13151b;
+  --bg-elevated: #191c24;
+  --card: #161920;
+  --border: rgba(255, 255, 255, 0.085);
+  --claw-accent: #ff5c5c;
+  --hermes-cyan: #22d3ee;
+  --hermes-violet: #8b5cf6;
+}

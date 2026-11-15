@@ -1,3 +1,8 @@
+# Contributor: Jass Suraj Shivnani (Class D12B, Roll 50)
+# Role: Lead System Architect & Core Autonomous Runtime Lead (35% Contribution)
+# Project: Dione (Group 19, University of Mumbai Capstone Project I)
+# Supervised by: Prof. Geocey Shejy (VESIT Computer Engineering)
+
 """
 
 Dione AI — Core Orchestration Engine (Production Zero-Mock ReAct Core)
@@ -65,18 +70,18 @@ from server.llm.adapter import LLMRequest, LLMMessage, LLMResponse
 from server.core.loop_detector import ToolLoopDetector
 
 from server.core.tool_truncator import truncate_tool_result_text
-from server.core.tool_repair import (
-    coerce_tool_args_for_callable,
-    detect_and_repair_plaintext_tool_calls,
-    scrub_repetitive_output,
-    synthesize_butter_smooth_summary,
-)
-from server.core.scripted_prelude import try_match_scripted_prelude
 from server.core.goal_verifier import (
     verify_goal_on_desktop,
     detect_stubborn_refusal_or_delegation,
     prompt_requires_in_app_interaction,
     INTERACTIVE_INPUT_TOOLS,
+)
+from server.core.tool_repair import (
+    coerce_tool_args_for_callable,
+    detect_and_repair_plaintext_tool_calls,
+    scrub_repetitive_output,
+    synthesize_butter_smooth_summary,
+    repair_and_coerce_tool_call,
 )
 
 from server.llm.turn_validator import validate_gemini_turns
@@ -365,15 +370,16 @@ class DioneEngine:
 
         from server.llm.failover import ModelFailoverManager
 
+        from server.plugins.hooks import HookRunner
+        from server.plugins.builtin.hermes_execution_plugin import HermesExecutionPlugin
+
         self.workspace_manager = get_workspace_manager()
 
         self.memory_plugin = MemoryPlugin()
-        try:
-            from server.plugins.builtin.hermes_execution_plugin import HermesExecutionPlugin
-            self.hermes_plugin = HermesExecutionPlugin()
-        except Exception as e:
-            logger.debug(f"HermesExecutionPlugin init skipped: {e}")
-            self.hermes_plugin = None
+
+        self.hermes_plugin = HermesExecutionPlugin()
+
+        self.hook_runner = HookRunner()
 
         self.compactor = SessionCompactor(max_turns_threshold=12, compact_keep_recent=6)
 
@@ -381,7 +387,7 @@ class DioneEngine:
 
         self.failover_manager = ModelFailoverManager()
 
-        logger.info("🌙 Dione Engine initialized with OpenClaw Engine Architecture & Zero-Mock ReAct Core")
+        logger.info("🌙 Dione Engine initialized with NousResearch Hermes Agent + OpenClaw Architecture & Zero-Mock ReAct Core")
 
     # ------------------------------------------------------------------
 
@@ -699,9 +705,16 @@ class DioneEngine:
 
             merged.pop(-1)
 
-        # Keep last 10 turns and cap individual historical messages at 1,200 chars (anti-bloat)
+        # Keep last 10 turns (with OpenClaw SessionCompactor summary for older turns) and cap at 1,200 chars
         from server.core.tool_truncator import scrub_base64_blobs
-        merged = merged[-10:]
+        if hasattr(self, "compactor") and self.compactor and self.compactor.should_compact(merged):
+            older = merged[:-8]
+            recent = merged[-8:]
+            summary_bits = [f"{r}: {scrub_base64_blobs(t)[:140]}" for r, t in older[-6:]]
+            compacted_summary = "[OpenClaw Compacted History Summary]: " + " | ".join(summary_bits)
+            merged = [("user", compacted_summary), ("model", "Understood. Continuing with compacted session context.")] + recent
+        else:
+            merged = merged[-10:]
 
         contents = []
         for role, txt in merged:
@@ -735,7 +748,14 @@ class DioneEngine:
         if self._profile_manager and self._profile_manager.profile.name and self._profile_manager.profile.name != "User":
             user_name = self._profile_manager.profile.name
 
-        sections = [
+        soul_file = Path("SOUL.md")
+        soul_identity = soul_file.read_text(encoding="utf-8").strip() if soul_file.exists() else ""
+
+        sections = []
+        if soul_identity:
+            sections.append(soul_identity)
+
+        sections.append(
             f"""You are Dione, an executive, autonomous personal AI and Windows 11 OS agent (Jarvis persona) for {user_name}.
 Current Time: {date_str}, {time_str} | Host: Windows 11 ({platform.node()}) | Working Dir: {Path.cwd()}
 
@@ -747,28 +767,45 @@ Always pick the fastest, most direct tool for the user's goal:
   Use `web_search`, `scrape_url`, or `search_academic_papers`.
 - **Local Files & Developer Commands**:
   Use `list_directory`, `read_file`, `write_file`, `search_files`, `system_info`, or `run_command`.
-- **Multi-Step Cross-Service Workflows**:
-  When a request spans 3+ steps across services or desktop apps, call `plan_task_workflow(goal=..., steps=[...])` first, resolve contacts via `lookup_contact`, and execute each step in sequence.
+- **Multi-Step Cross-Service Workflows & Hermes Programmatic Tool Calling (`execute_code` + `todo`)**:
+  - When a request spans 3+ steps, call `todo(action="write", goal=..., items=[...])` or `plan_task_workflow(goal=..., steps=[...])` to persist your checklist, and mark steps complete as you finish them.
+  - When you need to chain 3+ tool calls, compute geometry/coordinates, parse/filter data in Python, or automate a deterministic sequence in a single turn, call `execute_code(code=...)`! Inside `execute_code`, you can `from hermes_tools import web_search, scrape_url, read_file, write_file, list_directory, search_files, run_command, launch_app, computer_use, computer_click, computer_drag, computer_draw_shape, computer_type, computer_hotkey, computer_uia_action, json_parse, shell_quote, retry` (or `from dione_tools import ...`) and `print()` the final result.
+  - For isolated research or heavy file analysis that would bloat your main context, call `delegate_task(goal=..., context=...)`.
 
-## 2. WHEN & HOW TO USE COMPUTER-USE (PRECISE OBSERVE -> ACT -> VERIFY PROTOCOL):
+## 2. HERMES 4-RUNG COMPUTER-USE ESCALATION LADDER (OBSERVE -> ACT -> VERIFY -> ESCALATE):
+When controlling desktop GUI apps, follow the NousResearch Hermes Agent 4-Rung Escalation Ladder (`autonomous-ai-agents-computer-use`):
+- **Rung 1 — Focus & Semantic/Indexed Delivery**:
+  - Call `launch_app(app=...)` first to bring the window to the foreground.
+  - Prefer semantic Windows UIA patterns (`computer_uia_action(target_name="...", pattern="invoke"|"set_value"|"toggle")`) or Set-of-Mark element indices (`computer_use(action="capture", mode="som", app=...)` -> `computer_use(action="click", element=N, capture_after=True)`).
+- **Rung 2 — Mandatory Fresh State Verification**:
+  - Never assume a click or keystroke succeeded blindly. Inspect the returned `effect` / `[Post-Action Visual Verification]`.
+- **Rung 3 — Pixel Coordinate & Canvas Shape Escalation**:
+  - If an element lacks a UIA pattern or `effect == "suspected_noop"`, escalate immediately to grounded pixel coordinates: `computer_locate_and_click(description="...")`, `computer_click(x=..., y=...)`, `computer_drag(start_x=..., start_y=..., end_x=..., end_y=...)`, or `computer_draw_shape(shape="circle", app="mspaint")`.
+- **Rung 4 — Foreground Hardware Scan-Code Escalation**:
+  - For Chromium/Electron apps, canvases (MS Paint), or DirectX/OpenGL game windows (Valorant, Riot Client) that ignore background messages, use `computer_use(..., delivery_mode="foreground", bring_to_front=True)` or `computer_draw_shape` / `computer_drag` (which synthesize physical Win32 `SendInput` hardware packets with `DragReleaseGuard`).
 Use Computer-Use tools ONLY when the user asks to control desktop GUI apps, browsers, media playback, or on-screen elements:
 1. **FOCUS / LAUNCH FIRST & SETTLE**:
-   - To interact with ANY desktop app or game (Paint, Notepad, Calculator, Spotify, Chrome, Edge, VS Code, Explorer, Valorant, Riot Client):
-     ALWAYS call `launch_app(app=...)` first. Dione opens applications like a real human operator via native Windows Start Menu search (Win key -> Type name -> Enter). NEVER call `run_command` with `start <app>` or command prompt.
+   - To interact with any desktop app or game (Riot Client, Valorant, Spotify, Chrome, Edge, VS Code, Notepad, Calculator, Explorer):
+     ALWAYS call `launch_app(app=...)` first. This brings the target window to the foreground and waits for it to render.
    - To play a YouTube video: call `play_youtube_video(query=..., fullscreen=True)`.
    - To open a website: call `open_browser(url=...)`.
 2. **OBSERVE & VISUALLY LOCATE (NEVER GUESS COORDINATES OR BLIND CLICK)**:
    - To locate buttons, tabs, links, or queue buttons inside apps or games:
      Call `computer_locate_and_click(description="Play")` or `inspect_screen_vision(question="Where is the Play/Queue button located?")`.
      This captures the live foreground window and grounds the exact coordinates with Gemini Vision before clicking.
-3. **DELIBERATE, PRECISE ACTIONS**:
-   - To click by label/description: call `computer_locate_and_click(description="...")`.
-   - To click exact pixel coordinates: call `computer_click(x=..., y=...)`.
-   - To type: call `computer_type(text="...", press_enter=True)`.
-   - To press shortcuts (`f11`, `ctrl+l`, `ctrl+t`, `enter`, `esc`, `space`): call `computer_hotkey(keys="...")`.
-   - To draw shapes, circles, or drag:
-     * To draw a circle in Paint or a canvas: call `computer_draw_circle(center_x=700, center_y=500, radius=80)`.
-     * To drag with mouse held down: call `computer_drag(start_x=..., start_y=..., end_x=..., end_y=...)`.
+3. **DELIBERATE, PRECISE ACTIONS (CLICK, DRAG, DRAW IN PAINT, TYPE, UIA)**:
+   - **To draw a circle, square, rectangle, triangle, star, heart, smiley, spiral, house, diamond, arrow, or line in MS Paint (`mspaint`) or any canvas**:
+     Call `computer_draw_shape(shape="circle", app="mspaint")` directly! NEVER call `run_command` with `start mspaint` or `mspaint`! `computer_draw_shape` automatically focuses/maximizes Paint, selects the Ribbon shape tool (e.g. Oval, Star, Heart, Rectangle), glides the cursor, and drags diagonally across the canvas with Win32 hardware packets.
+   - **To launch or focus any desktop application**:
+     ALWAYS call `launch_app(app=...)`. NEVER execute `mspaint`, `notepad`, `calc`, or other GUI apps via `run_command`, as raw CLI execution waits and blocks!
+   - **To drag and drop or draw a line from (start_x, start_y) to (end_x, end_y)**:
+     Call `computer_drag(start_x=..., start_y=..., end_x=..., end_y=...)`.
+   - **To invoke a Windows UIA control semantically (`invoke`, `set_value`, `toggle`, `select`)**:
+     Call `computer_uia_action(target_name="...", pattern="invoke")`.
+   - **To click by label/description**: call `computer_locate_and_click(description="...")`.
+   - **To click exact pixel coordinates**: call `computer_click(x=..., y=...)`.
+   - **To type**: call `computer_type(text="...", press_enter=True)`.
+   - **To press shortcuts (`f11`, `ctrl+l`, `ctrl+t`, `enter`, `esc`, `space`)**: call `computer_hotkey(keys="...")`.
 
 ## 3. UNCONDITIONAL EXECUTION DISCIPLINE & PACED PRECISION:
 - **Paced Precision Over Speed**: Do NOT rush blindly through actions in milliseconds. Precision is paramount. Always bring the target window to the foreground, visually locate the button, execute the deliberate click, and verify the result.
@@ -783,10 +820,25 @@ Use Computer-Use tools ONLY when the user asks to control desktop GUI apps, brow
 - **Immediate Action**:
   - Act immediately with your tools — never reply with conversational filler without invoking the tool in the same turn.
   - When the user shares durable personal facts or preferences, persist them via `memory_write`."""
-        ]
+        )
 
         if knapsack_context:
             sections.append(f"\n## Retrieved Knowledge & Memory Context\n{knapsack_context}")
+
+        try:
+            todo_file = Path("data/memory/hermes_todo.json")
+            if todo_file.exists():
+                todo_data = json.loads(todo_file.read_text(encoding="utf-8"))
+                todo_steps = todo_data.get("steps", [])
+                pending_steps = [s for s in todo_steps if not s.get("done")]
+                if pending_steps:
+                    todo_lines = [f"## Active Hermes Todo Checklist ({todo_data.get('goal', 'Task')})"]
+                    for s in todo_steps:
+                        mk = "[x]" if s.get("done") else "[ ]"
+                        todo_lines.append(f"- {mk} Step {s.get('index')}: {s.get('task')}")
+                    sections.append("\n" + "\n".join(todo_lines))
+        except Exception:
+            pass
 
         if session_transcript:
             sections.append(f"\n## Recent Conversation Continuity\n{session_transcript}")
@@ -882,47 +934,62 @@ Use Computer-Use tools ONLY when the user asks to control desktop GUI apps, brow
         )()
 
         # Ensure OpenClaw memory tools are always present
+
         if hasattr(self, "memory_plugin") and self.memory_plugin:
+
             all_tools_map["memory_search"] = type("DioneToolStub", (), {"name": "memory_search", "func": self.memory_plugin.memory_search, "description": "Search MEMORY.md and memory logs"})()
+
             all_tools_map["memory_get"] = type("DioneToolStub", (), {"name": "memory_get", "func": self.memory_plugin.memory_get, "description": "Read line range from memory files"})()
+
             all_tools_map["memory_write"] = type("DioneToolStub", (), {"name": "memory_write", "func": self.memory_plugin.memory_write, "description": "Write notes to daily log or MEMORY.md"})()
 
-        # Ensure Hermes execution tools (execute_code, todo, delegate_task) are always present
         if hasattr(self, "hermes_plugin") and self.hermes_plugin:
-            try:
-                for ht in self.hermes_plugin.get_tools():
-                    h_name = getattr(ht, "name", "").split(".")[-1]
-                    if h_name:
-                        all_tools_map[h_name] = ht
-            except Exception as he:
-                logger.debug(f"Failed to register hermes tools: {he}")
+            for ht in self.hermes_plugin.get_tools():
+                if ht.method_name not in all_tools_map:
+                    all_tools_map[ht.method_name] = ht
 
         if not all_tools_map:
+
             return wrapped_tools
 
         for tool_name, tool_obj in all_tools_map.items():
+
             func = getattr(tool_obj, "func", None)
+
             if not callable(func):
+
                 continue
 
             # Ensure we wrap each unique method once
+
             raw_tool_name = getattr(func, "__name__", tool_name.split(".")[-1])
+
             clean_name = re.sub(r"[^a-zA-Z0-9_]", "_", raw_tool_name)
 
             def make_wrapper(original_func, tool_instance, clean_tool_name: str):
+
                 @functools.wraps(original_func)
+
                 async def tool_wrapper(*args, **kwargs):
+
                     step_num = state_tracker["step_number"] + 1
+
                     state_tracker["step_number"] = step_num
+
                     call_id = f"call_{uuid.uuid4().hex[:8]}"
 
-                    # Coerce and repair parameters (Hermes & OpenClaw arg coercion)
-                    params = coerce_tool_args_for_callable(original_func, dict(kwargs))
+                    # Coerce & sanitize kwargs via Hermes arg_coercion
+                    kwargs = coerce_tool_args_for_callable(original_func, dict(kwargs))
+                    params = dict(kwargs)
 
                     tool_call = ToolCall(
+
                         tool=clean_tool_name,
+
                         params=params,
+
                         call_id=call_id,
+
                     )
 
                     # 0. User Emergency Stop / Takeover Check
@@ -951,6 +1018,9 @@ Use Computer-Use tools ONLY when the user asks to control desktop GUI apps, brow
                     _cu_tools = (
                         "computer_locate_and_click",
                         "computer_click",
+                        "computer_draw_shape",
+                        "computer_drag",
+                        "computer_uia_action",
                     )
 
                     if _op is not None and tool_instance.name in _cu_tools:
@@ -984,27 +1054,19 @@ Use Computer-Use tools ONLY when the user asks to control desktop GUI apps, brow
                     loop_res = self.loop_detector.record_and_check(tool_instance.name, params)
 
                     if loop_res.stuck:
-
+                        state_tracker["loop_breaker_tripped"] = True
                         logger.warning(f"[LoopDetected] {loop_res.message}")
-
                         return f"Loop halted by Circuit Breaker: {loop_res.message}"
 
                     # Stagnation check
-
                     sig = DioneEngine._action_signature(tool_instance.name, params)
-
                     state_tracker["action_signatures"].append(sig)
-
                     recent_sigs = state_tracker["action_signatures"]
-
                     if len(recent_sigs) >= DioneEngine.STAGNATION_THRESHOLD:
-
                         if recent_sigs[-1] == recent_sigs[-2] == recent_sigs[-3]:
-
+                            state_tracker["loop_breaker_tripped"] = True
                             msg = f"Loop halted: Tool `{tool_instance.name}` was invoked with identical parameters 3 times consecutively without state progression."
-
                             logger.warning(f"[StagnationDetected] {msg}")
-
                             return msg
 
                     # 2. Safety Kernel Validation (Intent-Aware 5-Tier Lattice)
@@ -1116,6 +1178,20 @@ Use Computer-Use tools ONLY when the user asks to control desktop GUI apps, brow
 
                     )
 
+                    # 3.5 OpenClaw BEFORE_TOOL_CALL Hook Lifecycle
+                    if hasattr(self, "hook_runner") and self.hook_runner:
+                        try:
+                            from server.plugins.types import HookEvent, HookContext
+                            hook_ctx = HookContext(
+                                event=HookEvent.BEFORE_TOOL_CALL,
+                                data={"tool": tool_instance.name, "params": params, "step": step_num},
+                            )
+                            hook_res = await self.hook_runner.run(HookEvent.BEFORE_TOOL_CALL, hook_ctx)
+                            if isinstance(hook_res, dict) and hook_res.get("blocked"):
+                                return f"Action blocked by OpenClaw BEFORE_TOOL_CALL hook: {hook_res.get('reason', 'Policy')}"
+                        except Exception as hk_err:
+                            logger.debug(f"BEFORE_TOOL_CALL hook warning: {hk_err}")
+
                     # 4. Execute Genuine Tool (Zero Mock)
 
                     logger.info(f"Executing genuine tool: {tool_instance.name} with params: {params}")
@@ -1125,9 +1201,12 @@ Use Computer-Use tools ONLY when the user asks to control desktop GUI apps, brow
                     try:
 
                         if asyncio.iscoroutinefunction(original_func):
-                            raw_res = await original_func(*args, **params)
+
+                            raw_res = await original_func(*args, **kwargs)
+
                         else:
-                            raw_res = original_func(*args, **params)
+
+                            raw_res = original_func(*args, **kwargs)
 
                         res_str = str(raw_res)
 
@@ -1148,6 +1227,12 @@ Use Computer-Use tools ONLY when the user asks to control desktop GUI apps, brow
                     final_raw_text = res_str if success else f"Error: {err}"
                     if clean_tool_name not in state_tracker.setdefault("executed_tools_history", []):
                         state_tracker["executed_tools_history"].append(clean_tool_name)
+                    state_tracker.setdefault("tool_events_log", []).append({
+                        "tool": clean_tool_name,
+                        "params": params,
+                        "result": final_raw_text,
+                        "success": success,
+                    })
 
                     # 4.1 Fast Post-Action Desktop Audit (Only on GUI mutations, 150ms settle)
                     _is_desktop_action = (
@@ -1516,46 +1601,6 @@ Use Computer-Use tools ONLY when the user asks to control desktop GUI apps, brow
         }
 
         callables = self._prepare_callable_tools(step_queue, state_tracker)
-        callables_map = {getattr(c, "__name__", ""): c for c in callables}
-
-        # 4.1 Hermes Scripted Prelude (Live Demo Fast-Path):
-        # Executes unambiguous single and multi-step live-demo commands directly through Dione's wrapped tools
-        # (ACTING -> OBSERVING + screenshot capture), eliminating LLM hesitation, redundant tool calls, and 429 rate limits.
-        prelude_plan = try_match_scripted_prelude(user_message)
-        if prelude_plan:
-            logger.info(f"⚡ [Hermes Scripted Prelude] Executing live-demo blueprint for '{user_message}' ({len(prelude_plan)} steps)")
-            for t_name, t_args in prelude_plan:
-                tool_callable = callables_map.get(t_name)
-                if tool_callable:
-                    try:
-                        await tool_callable(**t_args)
-                    except Exception as pe:
-                        logger.warning(f"[Hermes Scripted Prelude] Step '{t_name}' notice: {pe}")
-                else:
-                    logger.warning(f"[Hermes Scripted Prelude] Tool '{t_name}' not in callables_map; skipping.")
-
-                # Drain and yield any steps queued by the tool execution
-                while not step_queue.empty():
-                    try:
-                        step_item = step_queue.get_nowait()
-                        self._current_steps.append(step_item)
-                        yield step_item
-                    except Exception:
-                        break
-
-            # Synthesize butter-smooth executive markdown summary
-            smooth_summary = synthesize_butter_smooth_summary(
-                user_message,
-                state_tracker.get("executed_tools_history", [p[0] for p in prelude_plan])
-            )
-            final_step = EngineStep(
-                step_number=state_tracker["step_number"] + 1,
-                state=EngineState.COMPLETE,
-                final_answer=smooth_summary,
-            )
-            self._current_steps.append(final_step)
-            yield final_step
-            return
 
         # 5. Initialize or Reuse Persistent Async Chat Session (with AI Studio Free Tier Failover Chain)
         preferred_model = (model_override or getattr(self.settings.llm, "model", "gemini-3.5-flash-lite") or "gemini-3.5-flash-lite").strip()
@@ -1586,7 +1631,7 @@ Use Computer-Use tools ONLY when the user asks to control desktop GUI apps, brow
 
             automatic_function_calling=types.AutomaticFunctionCallingConfig(
 
-                maximum_remote_calls=50
+                maximum_remote_calls=12
 
             ),
 
@@ -1675,13 +1720,37 @@ Use Computer-Use tools ONLY when the user asks to control desktop GUI apps, brow
 
             nonlocal chat_session
 
+            callable_map = {getattr(fn, "__name__", ""): fn for fn in callables}
+
             try:
+                # Deliberate human-paced REASONING step (0.85s thinking visibility)
+                await step_queue.put(
+                    EngineStep(
+                        step_number=1,
+                        state=EngineState.REASONING,
+                        thought=f"Analyzing intent: '{user_message}' and synthesizing sovereign execution plan...",
+                    )
+                )
+                await asyncio.sleep(0.85)
 
                 resp = await chat_session.send_message(user_message)
 
+                # 0.5 OpenClaw Plain-Text Tool Call Repair (`@openclaw/tool-call-repair`)
+                raw_first_txt = (getattr(resp, "text", None) or "").strip()
+                if raw_first_txt and not state_tracker.get("executed_tools_history"):
+                    repaired_calls = detect_and_repair_plaintext_tool_calls(raw_first_txt, set(callable_map.keys()))
+                    if repaired_calls:
+                        for r_name, r_args in repaired_calls:
+                            logger.info(f"[ToolCallRepair] Executing repaired plain-text tool call: {r_name}({r_args})")
+                            await callable_map[r_name](**r_args)
+                        return synthesize_butter_smooth_summary(user_message, state_tracker.get("tool_events_log", []))
+
                 # Closed-Loop Self-Correction, Anti-Stubbornness & Visual Verification Loop
-                max_reflections = 4
-                while state_tracker.get("reflection_count", 0) < max_reflections:
+                max_reflections = 2
+                while (
+                    state_tracker.get("reflection_count", 0) < max_reflections
+                    and not state_tracker.get("loop_breaker_tripped", False)
+                ):
                     resp_txt = (getattr(resp, "text", None) or "").strip()
                     is_refusal, refusal_reason = detect_stubborn_refusal_or_delegation(resp_txt)
                     needs_in_app, in_app_advice = prompt_requires_in_app_interaction(user_message)
@@ -1764,26 +1833,26 @@ Use Computer-Use tools ONLY when the user asks to control desktop GUI apps, brow
 
                     resp = await chat_session.send_message(directive_prompt)
 
-                resp_text = (getattr(resp, "text", None) or "").strip()
-                if resp_text:
-                    # Hermes plaintext tool call recovery & repetition scrubbing
-                    pt_fixed, pt_text = await detect_and_repair_plaintext_tool_calls(resp_text, callables_map)
-                    final_clean = scrub_repetitive_output(pt_text if pt_fixed else resp_text)
-                    if final_clean:
-                        return final_clean
+                if resp.text:
+
+                    return resp.text
 
                 if state_tracker.get("has_errors"):
+
                     last_err = state_tracker.get("last_error", "An operation failed")
+
                     return f"Encountered an issue executing the requested actions: {last_err}"
 
-                # Hermes Empty Response Guard: Synthesize butter-smooth summary rather than generic one-liner
-                return synthesize_butter_smooth_summary(user_message, state_tracker.get("executed_tools_history", []))
+                return "Execution completed successfully."
 
             except Exception as e:
 
                 import traceback
 
                 logger.warning(f"Chat execution exception: {repr(e)}\n{traceback.format_exc()}. Attempting clean session refresh for '{session_key}'...")
+                if state_tracker.get("tool_events_log"):
+                    logger.info("[Engine] Returning verified tool summary after post-tool LLM exception.")
+                    return synthesize_butter_smooth_summary(user_message, state_tracker["tool_events_log"])
 
                 # Fallback: re-initialize session preserving rehydrated history
 
@@ -1808,17 +1877,17 @@ Use Computer-Use tools ONLY when the user asks to control desktop GUI apps, brow
                         resp = await chat_session.send_message(user_message)
                         self.failover_manager.mark_success(candidate_model)
 
-                        resp_text = (getattr(resp, "text", None) or "").strip()
-                        if resp_text:
-                            final_clean = scrub_repetitive_output(resp_text)
-                            if final_clean:
-                                return final_clean
+                        if resp.text:
+
+                            return resp.text
 
                         if state_tracker.get("has_errors"):
+
                             last_err = state_tracker.get("last_error", "An operation failed")
+
                             return f"Encountered an issue executing the requested actions: {last_err}"
 
-                        return synthesize_butter_smooth_summary(user_message, state_tracker.get("executed_tools_history", []))
+                        return "Execution completed successfully."
 
                     except Exception:
 

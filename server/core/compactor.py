@@ -1,3 +1,8 @@
+# Contributor: Jass Suraj Shivnani (Class D12B, Roll 50)
+# Role: Lead System Architect & Core Autonomous Runtime Lead (35% Contribution)
+# Subsystem: Context Compression, History Pruning & Knapsack Memory Optimization
+# Project: Dione (Group 19, University of Mumbai Capstone Project I)
+
 """
 Dione AI — Session Compactor & Pre-Compaction Memory Flush
 =========================================================
@@ -42,9 +47,13 @@ class SessionCompactor:
         self.max_turns_threshold = max_turns_threshold
         self.compact_keep_recent = compact_keep_recent
 
-    def should_compact(self, history: List[Any]) -> bool:
+    def should_compact(self, history: Any) -> bool:
         """Determines if the session has reached the compaction threshold."""
-        return len(history) >= self.max_turns_threshold
+        if isinstance(history, int):
+            return history >= self.max_turns_threshold
+        if hasattr(history, "__len__"):
+            return len(history) >= self.max_turns_threshold
+        return False
 
     async def run_pre_compaction_memory_flush(
         self,

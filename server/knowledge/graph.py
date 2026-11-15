@@ -1,6 +1,12 @@
 """
 Dione AI — Personal Knowledge Graph (NetworkX GraphRAG with Entity Disambiguation)
 ==================================================================================
+Contributor: Khushi Sadhuramani (Class D12B, Roll 44)
+Role: Knowledge Graph & GraphRAG Memory Specialist (18% Contribution)
+Project: Dione (Group 19, University of Mumbai Capstone Project I)
+Supervised by: Prof. Geocey Shejy (Assistant Professor, VESIT Computer Engineering)
+==================================================================================
+==================================================================================
 Implements a 2-Hop Relational Knowledge Multigraph:
 1. Entity Disambiguation & Identity Resolution: Distinguishes people/entities with the same name
    (e.g., Alex from Figma vs. Alex from Capstone) and instructs the agent to ask for clarification.
@@ -72,6 +78,8 @@ class KnowledgeGraph:
                     f"{self.graph.number_of_edges()} relations"
                 )
                 self.sync_social_dossiers()
+                if self.graph.number_of_nodes() < 5:
+                    self.ensure_rich_seed_graph()
             except Exception as e:
                 logger.error(f"Failed to load knowledge graph: {e}")
                 self.graph = nx.MultiDiGraph()
@@ -648,3 +656,198 @@ class KnowledgeGraph:
     def search_entities(self, query: str) -> List[dict]:
         """Search entities by substring across name and metadata."""
         return self.find_entities(name=query)
+
+    def ensure_rich_seed_graph(self):
+        """Seed 17 core entities and 27 semantic relationship triples covering the 4-student capstone team and subsystems."""
+        required_creators = ["Jass Suraj Shivnani", "Riya Sanjay Khialani", "Khushi Sadhuramani", "Ruchika Dingria"]
+        has_all_creators = all(any(self.graph.nodes[n].get("name") == name for n in self.graph.nodes) for name in required_creators)
+        if has_all_creators and self.graph.number_of_nodes() >= 16 and self.graph.number_of_edges() >= 25:
+            return
+
+        logger.info("[KnowledgeGraph] Seeding rich demo graph with 17 entities and 27 semantic relationships for Capstone Group 19.")
+        seed_entities = [
+            ("user_jass", "Jass Suraj Shivnani", EntityType.PERSON, {
+                "role": "Lead System Architect & Core Autonomous Runtime Lead",
+                "contribution": "35%",
+                "roll_no": "50",
+                "class": "D12B",
+                "domain": "ReAct Loop, CUA Win32, Poset Safety Lattice, AST Self-Healing"
+            }),
+            ("student_riya", "Riya Sanjay Khialani", EntityType.PERSON, {
+                "role": "Live Multimodal Audio Pipeline & Frontend Lead",
+                "contribution": "30%",
+                "roll_no": "34",
+                "class": "D12A",
+                "domain": "Gemini Live 16kHz WebSocket Bridge, OpenClaw Frosted Glass UI, AG-UI SSE Protocol"
+            }),
+            ("student_khushi", "Khushi Sadhuramani", EntityType.PERSON, {
+                "role": "Knowledge Graph & GraphRAG Memory Specialist",
+                "contribution": "18%",
+                "roll_no": "44",
+                "class": "D12B",
+                "domain": "NetworkX 2-Hop Multigraph, Entity Resolution, Contact Disambiguation, ChromaDB Vector Sync"
+            }),
+            ("student_ruchika", "Ruchika Dingria", EntityType.PERSON, {
+                "role": "Proactive Inactive Synthesis & Quality Assurance Specialist",
+                "contribution": "17%",
+                "roll_no": "70",
+                "class": "D12B",
+                "domain": "Win32 Idle Tracking, Dream & Scout Engine, Affective State Modeling, 100-Case Benchmarking"
+            }),
+            ("prof_shejy", "Prof. Geocey Shejy", EntityType.PERSON, {
+                "role": "Project Mentor & Guide",
+                "department": "Department of Computer Engineering",
+                "institution": "VESIT, University of Mumbai"
+            }),
+            ("proj_capstone", "Capstone Project I (Group 19)", EntityType.PROJECT, {
+                "track": "Mumbai University B.Tech Computer Engineering",
+                "academic_year": "2025-2026",
+                "status": "Production Ready"
+            }),
+            ("agent_dione", "Dione Sovereign Agent", EntityType.AGENT, {
+                "version": "v7.0 MAF + Hermes + OpenClaw",
+                "platform": "Windows 11 Local-First Workstation"
+            }),
+            ("fw_hermes", "NousResearch Hermes 4-Rung Escalation Engine", EntityType.CONCEPT, {
+                "architect": "Jass Suraj Shivnani",
+                "escalation": "Observe -> Act -> Verify -> Escalate"
+            }),
+            ("fw_openclaw", "OpenClaw Frosted Glass UI & AG-UI SSE", EntityType.CONCEPT, {
+                "lead": "Riya Sanjay Khialani",
+                "architecture": "Reactive WebSocket Audio & SSE Stream Multiplexing"
+            }),
+            ("model_gemini_audio", "Gemini Live 16kHz Bidirectional Audio Bridge", EntityType.TECHNOLOGY, {
+                "lead": "Riya Sanjay Khialani",
+                "modality": "PCM 16kHz Low-Latency Full-Duplex Voice"
+            }),
+            ("os_windows11", "Windows 11 Workstation Native Desktop", EntityType.SYSTEM, {
+                "kernel": "NT 10.0",
+                "hardware_drag": "SendInput + mouse_event + UIA Session 0"
+            }),
+            ("srv_gworkspace", "Google Workspace OAuth2 Cloud Integration", EntityType.SERVICE, {
+                "integrations": ["Gmail Live", "Google Calendar", "Google Drive", "Google Photos"]
+            }),
+            ("mod_kg_rag", "Multigraph GraphRAG Memory Subsystem", EntityType.CONCEPT, {
+                "specialist": "Khushi Sadhuramani",
+                "engine": "NetworkX 2-Hop Entity Resolution & Disambiguation"
+            }),
+            ("tool_mspaint", "MS Paint Desktop Hardware Automation", EntityType.TOOL, {
+                "ribbon_shapes": ["Oval", "Five-point star", "Heart", "Rectangle"]
+            }),
+            ("subsys_dream", "Dream & Scout Inactive Engine", EntityType.SUBSYSTEM, {
+                "specialist": "Ruchika Dingria",
+                "features": ["Win32 Idle Tracking", "Email Auto-Drafting", "KG Consolidation", "Touch Wake"]
+            }),
+            ("suite_empirical_eval", "100-Case Empirical Benchmark Suite", EntityType.FEATURE, {
+                "lead_qa": "Ruchika Dingria",
+                "domains": ["Tool Selection", "Safety Poset", "Email Scouting", "GraphRAG 2-Hop"]
+            }),
+            ("feat_demo_deck", "Butter-Smooth Professor Demo Deck", EntityType.FEATURE, {
+                "actions": ["Paint Circle", "PTC Code Sandbox", "Live Voice", "Sleep Synthesis"]
+            }),
+        ]
+
+        node_map = {}
+        for nid, name, etype, props in seed_entities:
+            existing = self.find_entities(name=name)
+            if existing:
+                node_map[nid] = existing[0]["id"]
+            else:
+                ent = Entity(id=f"seed_{nid}", name=name, type=etype, metadata=props)
+                self.add_entity(ent)
+                node_map[nid] = ent.id
+
+        seed_relations = [
+            # Creator and Leadership Edges (Jass 35%, Riya 30%, Khushi 18%, Ruchika 17%)
+            ("user_jass", "agent_dione", RelationType.CREATOR_OF, 1.0, "Jass Suraj Shivnani designed and engineered Dione core runtime (35%)"),
+            ("user_jass", "proj_capstone", RelationType.WORKS_ON, 1.0, "Lead System Architect & Core Autonomous Runtime Lead (35%)"),
+            ("user_jass", "fw_hermes", RelationType.ARCHITECTS, 0.95, "Architected Hermes 4-Rung Escalation and ReAct loop"),
+            ("student_riya", "agent_dione", RelationType.CREATOR_OF, 1.0, "Riya Sanjay Khialani co-created Dione audio & UI subsystems (30%)"),
+            ("student_riya", "proj_capstone", RelationType.WORKS_ON, 1.0, "Live Multimodal Audio Pipeline & Frontend Lead (30%)"),
+            ("student_riya", "model_gemini_audio", RelationType.IMPLEMENTS, 0.95, "Implemented 16kHz bidirectional full-duplex Gemini Live voice bridge"),
+            ("student_riya", "fw_openclaw", RelationType.IMPLEMENTS, 0.95, "Implemented OpenClaw frosted glass UI and AG-UI SSE protocol"),
+            ("student_khushi", "proj_capstone", RelationType.WORKS_ON, 0.9, "Knowledge Graph & GraphRAG Memory Specialist (18%)"),
+            ("student_khushi", "mod_kg_rag", RelationType.DESIGNS, 0.95, "Designed 2-Hop NetworkX multigraph, entity disambiguation, and GraphRAG"),
+            ("student_khushi", "mod_kg_rag", RelationType.SPECIALIZES_IN, 0.95, "Specializes in relational knowledge graph topology and vector sync"),
+            ("student_ruchika", "proj_capstone", RelationType.WORKS_ON, 0.9, "Proactive Inactive Synthesis & Quality Assurance Specialist (17%)"),
+            ("student_ruchika", "subsys_dream", RelationType.DEVELOPS, 0.95, "Developed Win32 idle tracking and Dream & Scout sleep engine"),
+            ("student_ruchika", "suite_empirical_eval", RelationType.EVALUATES, 0.95, "Conducted 100-case empirical evaluation and IEEE documentation"),
+            # Mentor Relations
+            ("prof_shejy", "proj_capstone", RelationType.MENTORS, 1.0, "Project Mentor & Guide, Assistant Professor, VESIT Computer Engineering"),
+            ("prof_shejy", "user_jass", RelationType.MENTORS, 1.0, "Mentored Jass Shivnani on System Architecture"),
+            ("prof_shejy", "student_riya", RelationType.MENTORS, 1.0, "Mentored Riya Khialani on Live Audio Streaming & User Interface"),
+            ("prof_shejy", "student_khushi", RelationType.MENTORS, 1.0, "Mentored Khushi Sadhuramani on Knowledge Graph Structures"),
+            ("prof_shejy", "student_ruchika", RelationType.MENTORS, 1.0, "Mentored Ruchika Dingria on Proactive Scheduling & Evaluation"),
+            # System Integration Edges
+            ("agent_dione", "proj_capstone", RelationType.POWERS, 1.0, "Core autonomous artifact and demonstration system"),
+            ("agent_dione", "fw_hermes", RelationType.INTEGRATES, 0.95, "Implements Hermes 4-Rung Escalation and ReAct loop"),
+            ("agent_dione", "fw_openclaw", RelationType.INTEGRATES, 0.95, "OpenClaw frosted glass UI and real-time execution engine"),
+            ("agent_dione", "model_gemini_audio", RelationType.USES, 0.95, "Full-duplex bidirectional 16kHz low-latency voice pipeline"),
+            ("agent_dione", "os_windows11", RelationType.OPERATES_ON, 1.0, "Native desktop control, UIA patterns, and Win32 hardware simulation"),
+            ("agent_dione", "srv_gworkspace", RelationType.CONNECTS_TO, 0.9, "3-Tier OAuth2 synchronization with Drive, Photos, and Gmail"),
+            ("agent_dione", "mod_kg_rag", RelationType.EMBEDS, 0.95, "2-Hop personal knowledge multigraph with entity disambiguation"),
+            ("agent_dione", "tool_mspaint", RelationType.CONTROLS, 0.9, "Direct UIA Ribbon shape tool selection and diagonal hardware drag"),
+            ("agent_dione", "subsys_dream", RelationType.RUNS, 0.9, "Autonomous sleep-state synthesis, mail drafting, and PC touch wake detection"),
+            ("agent_dione", "feat_demo_deck", RelationType.FEATURES, 0.95, "1-Click persistent professor demonstration pills"),
+            ("proj_capstone", "suite_empirical_eval", RelationType.EVALUATES, 0.9, "Empirical 100-case evaluation across GAIA, security, and OS tools"),
+        ]
+
+        for src, tgt, rtype, weight, ctx in seed_relations:
+            src_id = node_map.get(src)
+            tgt_id = node_map.get(tgt)
+            if src_id and tgt_id:
+                rel = Relation(
+                    id=f"rel_{src}_{tgt}",
+                    source_id=src_id,
+                    target_id=tgt_id,
+                    relation_type=rtype,
+                    weight=weight,
+                    metadata={"context": ctx},
+                )
+                self.add_relation(rel)
+
+        self._save()
+
+    def export_visual_graph(self, limit: int = 100) -> Dict[str, Any]:
+        """Export resolved entities and relationship triples for KnowledgeGraphView UI."""
+        if self.graph.number_of_nodes() < 5:
+            self.ensure_rich_seed_graph()
+
+        nodes = []
+        node_names = {}
+        for node_id, data in list(self.graph.nodes(data=True))[:limit]:
+            name = data.get("name", node_id)
+            node_names[node_id] = name
+            nodes.append({
+                "id": node_id,
+                "name": name,
+                "type": str(data.get("type", "concept")),
+                "metadata": data.get("metadata", {}),
+                "properties": data.get("properties", data.get("metadata", {})),
+                "created_at": data.get("created_at", ""),
+            })
+
+        edges = []
+        for u, v, k, data in list(self.graph.edges(keys=True, data=True))[:limit * 2]:
+            rel_type = str(data.get("relation_type", "related_to"))
+            edges.append({
+                "id": k,
+                "source": u,
+                "source_name": node_names.get(u, u),
+                "target": v,
+                "target_name": node_names.get(v, v),
+                "relation_type": rel_type,
+                "label": rel_type.replace("_", " ").upper(),
+                "weight": float(data.get("weight", 1.0)),
+                "context": data.get("metadata", {}).get("context", data.get("context", "")),
+            })
+
+        stats = self.get_stats()
+        return {
+            "stats": stats,
+            "nodes": nodes,
+            "edges": edges,
+            "entities": nodes,
+            "total_entities": len(nodes),
+            "total_relations": len(edges),
+        }
