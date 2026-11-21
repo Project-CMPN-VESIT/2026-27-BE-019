@@ -1,165 +1,223 @@
-# 🌙 Dione — Sentient Local AI Assistant
+# 🪐 Dione: A Privacy-Preserving Local Large Action Model (LAM) Orchestration Engine for Ambient Personal Assistance
 
-> **"Intelligence that lives with you, not above you."**
+[![University of Mumbai](https://img.shields.io/badge/University_of_Mumbai-VESIT_CMPN-blue.svg)](https://vesit.ves.ac.in/)
+[![Capstone Project II](https://img.shields.io/badge/Capstone_Project-Group_19_(A.Y._2026--27)-purple.svg)]()
+[![Paper Submitted](https://img.shields.io/badge/Paper_Submission-European_Journal_on_AI_(EAI--26--0653)-success.svg)]()
+[![Similarity Index](https://img.shields.io/badge/Turnitin_Similarity-1%25_Verified-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Verification_Tests-20%2F20_Passed-emerald.svg)]()
 
-Dione is a **Local Large Action Model (LAM) Orchestration Engine** — a privacy-first, agentic AI personal assistant that runs entirely on your hardware. Unlike cloud-dependent assistants, Dione keeps your data sovereign, builds a living knowledge graph of your digital life, and understands the emotional context of your world.
+> **Department of Computer Engineering**  
+> **Vivekanand Education Society's Institute of Technology (VESIT)**  
+> *An Autonomous Institute Affiliated to the University of Mumbai*  
+> **Semester VII & VIII | Capstone Project–II (Group 19)**
 
-## ✨ Star Factors
+---
 
-### 1. 🧠 Personal Knowledge Graph
-Not flat-file memory — a **structured graph database** connecting people, events, documents, and preferences with typed relationships. When you say "send that thing to Alice," Dione traverses the graph and *knows* what you mean.
+## 👥 Project Team & Mentorship
 
-### 2. 💜 Sentiment Intelligence Engine
-Every incoming message is analyzed for emotional weight — urgency, frustration, importance, tone. Dione dynamically prioritizes, escalates, or batches information based on how it *feels*, not just what it says.
+| Name | Class & Roll No. | Role & Contribution Focus |
+| :--- | :--- | :--- |
+| **Jass Shivnani** *(Project Lead)* | D17B / 50 | Overall Architecture, Large Action Model Orchestration, Win32 CUA Actuation |
+| **Riya Khialani** | D17A / 34 | Sovereign Workspace UI, Multimodal Communications, Gmail Adapter |
+| **Khushi Sadhuramani** | D17B / 44 | Deterministic Safety Kernel, 5-Tier Permission Lattice, Audit Logging |
+| **Ruchika Dingria** | D17B / 70 | Dual-Tier Memory (NetworkX Graph + ChromaDB), Statistical Benchmarks |
+| **Dr. Geocey Shejy** | *Project Mentor* | Associate Professor, Department of Computer Engineering, VESIT |
 
-### 3. 📱 Mobile Chat Companion
-Dione lives on your PC (local LLM + engine). You talk to it through a beautiful mobile app — proactive notifications, contextual suggestions, and a conversational UI that makes it feel like texting a brilliant friend.
+---
 
-### 4. 🔒 Zero-Trust Local Intelligence
-All reasoning happens on YOUR device. No data leaves your machine except the specific API calls YOU authorize (sending an email, posting a message). Your digital life stays yours.
+## 📋 Official CMPN Department Deliverables Index
 
-## 🏗️ Architecture
+In accordance with the Project CMPN Capstone Examination Guidelines, all mandatory project artifacts are archived within this repository:
+
+| # | Deliverable | Location in Repository | Description |
+| :-: | :--- | :--- | :--- |
+| **1** | **Final Working System / Product** | [`server/`](server/) & [`client/`](client/) | Full-stack FastAPI backend + React VisionOS Electron workstation station |
+| **2** | **Source Code with Version History** | [GitHub Commit History](../../commits/main) | Verified Git commit history spanning design, implementation, and evaluation |
+| **3** | **Testing & Validation Report** | [`docs/DIONE_OFFICIAL_100_CASE_EVALUATION_REPORT.md`](docs/DIONE_OFFICIAL_100_CASE_EVALUATION_REPORT.md) | 100-case automated test suite, tool failure recoveries, and boundary audits |
+| **4** | **Performance Analysis & Result Report** | [`docs/DIONE_100PCT_REAL_END_TO_END_EVALUATION.md`](docs/DIONE_100PCT_REAL_END_TO_END_EVALUATION.md) | Empirical latency, memory consumption, token reduction, and recall statistics |
+| **5** | **Deployment Report & User Manual** | [`docs/SETUP.md`](docs/SETUP.md) & [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Workstation requirements, dependency matrix, and step-by-step setup guide |
+| **6** | **Research Paper & Publication Proof** | [`docs/DIONE_IEEE_RESEARCH_PAPER_A4.pdf`](docs/DIONE_IEEE_RESEARCH_PAPER_A4.pdf) | Submitted to *European Journal on AI* (ID: `EAI-26-0653`); 1% Turnitin Index |
+| **7** | **Final Black Book Report** | [`docs/Dione_Capstone_Blackbook_Final_Verified.docx`](docs/Dione_Capstone_Blackbook_Final_Verified.docx) | Complete Capstone-II Black Book (Chapters 1 to 8 + Front Matter + Appendix I) |
+| **8** | **Presentation Slides** | [`docs/Dione_Review2_Presentation.pptx`](docs/Dione_Review2_Presentation.pptx) | Oral examination slide deck with architecture diagrams and telemetry charts |
+| **9** | **Demonstration Video** | [`docs/figures/Dione_AI_Capstone_Demo_v2_Voiceover.mp4`](docs/figures/Dione_AI_Capstone_Demo_v2_Voiceover.mp4) | Timecoded 1m 35s HD demonstration video with studio-grade neural voiceover |
+| **10** | **Plagiarism & AI Verification** | [`docs/DIONE_TURNITIN_SIMILARITY_REPORT_A4.pdf`](docs/DIONE_TURNITIN_SIMILARITY_REPORT_A4.pdf) | DrillBit / Turnitin certified report (1% similarity, 0% AI detection) |
+
+---
+
+## 🎯 Executive Summary & Novel Contributions
+
+Existing AI assistants (Siri, Alexa, Google Assistant) are predominantly cloud-tethered audio routing pipelines. They suffer from high data privacy risks, inability to execute arbitrary local OS workflows, and catastrophic memory loss across prolonged multi-session tasks.
+
+**Dione** introduces a sovereign, client-side Large Action Model (LAM) orchestration engine that executes natively on consumer workstation hardware.
 
 ```
-┌──────────────────────────────────────────┐
-│           YOUR PC (Dione's Home)          │
-│                                           │
-│  ┌──────────┐  ┌───────────────────────┐ │
-│  │ Local LLM │  │   Knowledge Graph     │ │
-│  │ (Mistral/ │  │ (People, Events,     │ │
-│  │  Llama)   │  │  Docs, Relations)    │ │
-│  └─────┬─────┘  └──────────┬───────────┘ │
-│        │                   │              │
-│  ┌─────▼───────────────────▼───────────┐ │
-│  │      Dione Orchestration Engine      │ │
-│  │   ReAct Loop · Plugin System ·       │ │
-│  │   Sentiment Engine · Memory Manager  │ │
-│  └──────────────┬──────────────────────┘ │
-│                 │  FastAPI (REST + WS)    │
-└─────────────────┼────────────────────────┘
-                  │
-     ┌────────────┼──────────────┐
-     │            │              │
- ┌───▼────┐  ┌───▼────┐  ┌─────▼──────┐
- │ Mobile  │  │ PC CLI │  │  Plugins   │
- │  App    │  │ / Web  │  │ (WhatsApp, │
- │(Flutter)│  │   UI   │  │ Gmail ...) │
- └────────┘  └────────┘  └────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           DIONE SOVEREIGN RUNTIME ARCHITECTURE                  │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│   [ Multimodal Prompts ] ───▶ [ Hermes ReAct Planner (Bounded Steps) ]          │
+│                                              │                                  │
+│                                              ▼                                  │
+│                 ┌───────────────────────────────────────────────┐               │
+│                 │      DETERMINISTIC SAFETY KERNEL (Gate)       │               │
+│                 │  • 5-Tier Permission Lattice (Read/Write/Exec)│               │
+│                 │  • Hard Denial: System32, Registry, Sensitive │               │
+│                 │  • Cryptographic SQLite Audit Logger          │               │
+│                 └───────────────────────────────────────────────┘               │
+│                                              │ (Approved Actions)               │
+│                         ┌────────────────────┴───────────────────┐              │
+│                         ▼                                        ▼              │
+│            [ Win32 CUA Actuator ]                     [ Tool / API Adapters ]   │
+│         • Native Windows API Injection            • Live Web Search (DuckDuckGo)│
+│         • Coordinate Mapping (1000x1000)          • Authenticated Gmail Dispatch│
+│         • GDI Automation (MS Paint, Apps)         • Hardware Telemetry (NVIDIA) │
+│                                                                                 │
+│   ───────────────────────────────────────────────────────────────────────────   │
+│                     DUAL-TIER SEMANTIC MEMORY SUBSYSTEM                         │
+│     • Fast Relational: NetworkX MultiDiGraph (1.158 ms Mean 2-Hop Traversal)    │
+│     • Dense Semantic:  ChromaDB + MiniLM-L6 Embeddings (Cosine Dist > 0.78)     │
+│     • Autonomous State: Sleep & Scout Background Memory Consolidation           │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 📂 Project Structure
+### Key Technical Novelties:
+1. **Client-Side Sovereignty:** Reasoning runs locally via quantized local models (Ollama Qwen2.5-Coder 7B) with cloud API failover (Gemini 2.5 Flash Lite), ensuring zero external data exfiltration.
+2. **Deterministic Safety Kernel:** An external policy gate decoupled from LLM stochasticity that intercepts and aborts high-risk actions (e.g., file system destruction, credential exfiltration) prior to execution.
+3. **Dual-Tier Relational Memory:** Merges a high-speed NetworkX directed property graph for explicit entity relations with ChromaDB vector embeddings for multi-session conversational recall.
+4. **Native Win32 Computer-Use Action (CUA):** Directly controls Windows 11 GUI applications via Win32 API injection without requiring heavy headless browsers or cloud-streamed VNC servers.
+
+---
+
+## 📊 Empirical Highlights & Evaluation Results
+
+Benchmarked across 100 automated test scenarios on standard workstation hardware (Intel Core i5/i7, 16GB RAM, NVIDIA RTX 3050 Ti):
 
 ```
-dione/
-├── server/                    # Python backend (Dione's brain)
-│   ├── core/                  # Orchestration engine
-│   │   ├── engine.py          # Main ReAct loop
-│   │   ├── context.py         # Context manager (sliding window + RAG)
-│   │   ├── safety.py          # Safety guardrails & validation
-│   │   └── permissions.py     # Permission manifest system
-│   ├── llm/                   # LLM adapter layer
-│   │   ├── adapter.py         # Unified LLM interface
-│   │   ├── ollama.py          # Ollama backend
-│   │   └── llamacpp.py        # llama.cpp backend
-│   ├── knowledge/             # Knowledge Graph system
-│   │   ├── graph.py           # Graph database operations
-│   │   ├── entities.py        # Entity definitions (Person, Event, Doc)
-│   │   ├── relations.py       # Relationship types
-│   │   └── query.py           # Graph query engine
-│   ├── sentiment/             # Sentiment Intelligence Engine
-│   │   ├── analyzer.py        # Sentiment analysis pipeline
-│   │   ├── priority.py        # Priority scoring & escalation
-│   │   └── models.py          # Sentiment data models
-│   ├── memory/                # Persistent memory system
-│   │   ├── manager.py         # Memory lifecycle management
-│   │   ├── vectorstore.py     # ChromaDB vector store
-│   │   └── embeddings.py      # Local embedding generation
-│   ├── plugins/               # Plugin system
-│   │   ├── registry.py        # Plugin loader & registry
-│   │   ├── base.py            # Base plugin class + @dione_tool decorator
-│   │   ├── sandbox.py         # Sandboxed execution environment
-│   │   └── builtin/           # Built-in plugins
-│   │       ├── gmail.py       # Gmail integration
-│   │       ├── whatsapp.py    # WhatsApp reader
-│   │       ├── calendar.py    # Calendar management
-│   │       ├── filesystem.py  # Local file operations
-│   │       └── browser.py     # Browser automation
-│   ├── api/                   # API layer
-│   │   ├── app.py             # FastAPI application
-│   │   ├── routes/            # API routes
-│   │   │   ├── chat.py        # Chat endpoints (REST + WebSocket)
-│   │   │   ├── knowledge.py   # Knowledge graph endpoints
-│   │   │   ├── plugins.py     # Plugin management endpoints
-│   │   │   └── status.py      # System status & health
-│   │   └── middleware.py      # Auth, CORS, rate limiting
-│   ├── config/                # Configuration
-│   │   ├── settings.py        # Pydantic settings model
-│   │   └── defaults.py        # Default configuration values
-│   ├── main.py                # Server entry point
-│   ├── requirements.txt       # Python dependencies
-│   └── pyproject.toml         # Project metadata
-├── mobile/                    # Flutter mobile app
-│   └── dione_app/             # Flutter project root
-├── docs/                      # Documentation
-│   ├── Synopsis .pdf          # Original synopsis
-│   ├── ARCHITECTURE.md        # Detailed architecture document
-│   └── STAR_FACTORS.md        # Star factor documentation
-├── scripts/                   # Utility scripts
-│   ├── setup.sh               # One-line setup script
-│   └── start.py               # Start Dione server
-├── data/                      # Local data directory (gitignored)
-│   ├── knowledge/             # Knowledge graph storage
-│   ├── vectors/               # ChromaDB vector storage
-│   └── memory/                # Persistent memory files
-├── .env.example               # Environment variable template
-├── .gitignore                 # Git ignore rules
-├── docker-compose.yml         # Docker setup (optional)
-└── README.md                  # This file
+┌────────────────────────────────┬───────────────────┬───────────────────┐
+│ Evaluation Metric              │ Dione Engine      │ Baseline / Target │
+├────────────────────────────────┼───────────────────┼───────────────────┤
+│ Mean 2-Hop Graph Latency       │ 1.158 ms          │ < 5.0 ms          │
+│ Minimum Graph Traversal Time   │ 0.964 ms          │ —                 │
+│ P95 Graph Traversal Time       │ 1.576 ms          │ < 10.0 ms         │
+│ Multi-Session Fact Recall (S5) │ 93.2%             │ 46.1% (Dense RAG) │
+│ Prompt-Token Reduction (Graph) │ ~75%              │ Vanilla Context   │
+│ Safety Policy Enforcement      │ 100% Interception │ 0 Bypasses        │
+│ Unit & Integration Test Suite  │ 20 / 20 Passed    │ 100% Pass Rate    │
+│ Turnitin Similarity Index      │ 1% Verified       │ < 15% Standard    │
+└────────────────────────────────┴───────────────────┴───────────────────┘
 ```
 
-## 🚀 Quick Start
+---
+
+## 🖥️ User Interface & Operational Modules
+
+### 1. Sovereign Workspace & Natural Language Request Entry
+*Interactive dark-mode workspace displaying active persona state, model selection pill, and workstation activity drawer.*
+
+![Main Assistant Interface](docs/figures/report_ready_screenshots/Fig7_1a_main_chat_dashboard.png)
+
+### 2. Dual-Tier Knowledge Graph & Episodic Memory Explorer
+*Visual entity-relationship explorer showing 97 graph nodes, 384-D vector embeddings, and 2-hop bounded subgraphs.*
+
+![Knowledge Graph Explorer](docs/figures/report_ready_screenshots/Fig7_1b_knowledge_graph_memory.png)
+
+### 3. Native Win32 Computer-Use Action & Desktop Vision
+*Real-time desktop vision with normalized 1000×1000 coordinate grid, autonomous application launching, and GDI canvas actuation.*
+
+![Computer-Use Vision Grid](docs/figures/report_ready_screenshots/Fig7_1c_computer_use_vision_grid.png)
+
+### 4. Deterministic Safety Kernel & Permission Lattice
+*External policy supervisor enforcing 4 security tiers, system path guards (`System32`, `*.pem`, `*.env`), and hardware killswitch.*
+
+![Safety Kernel Lattice](docs/figures/report_ready_screenshots/Fig7_1h_safety_kernel_lattice.png)
+
+### 5. Multi-Turn Execution & Live Hardware Telemetry
+*ReAct execution showing live system telemetry query (Windows 11, Intel 8-core, NVIDIA RTX 3050 Ti Laptop GPU).*
+
+![System Telemetry Execution](docs/figures/report_ready_screenshots/Fig7_1e_live_capstone_query_telemetry.png)
+
+---
+
+## 🚀 Quick Start Guide
+
+### Prerequisites
+* **Operating System:** Windows 10 / 11 (64-bit)
+* **Python Runtime:** Python 3.11 or 3.12 (64-bit virtual environment)
+* **Node.js:** v18.0.0 or higher
+* **Hardware:** 8 GB RAM minimum (16 GB recommended), NVIDIA GPU (optional for CUDA acceleration)
+
+### Installation & Launch
+
+1. **Clone the Official Repository:**
+   ```bash
+   git clone https://github.com/Project-CMPN-VESIT/2026-27-BE-019.git
+   cd 2026-27-BE-019
+   ```
+
+2. **Setup Python Backend Environment:**
+   ```bash
+   python -m venv .venv
+   .venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+
+3. **Install Frontend Dependencies:**
+   ```bash
+   cd client
+   npm install
+   cd ..
+   ```
+
+4. **Launch Dione Sovereign Workspace:**
+   ```bash
+   # Option A: One-click launcher
+   Dione.bat
+
+   # Option B: Manual service start
+   # Terminal 1: Backend API
+   python -m uvicorn server.api.app:app --host 127.0.0.1 --port 8900
+
+   # Terminal 2: Native Desktop Client
+   cd client
+   npm run start
+   ```
+
+5. **Access Workspace:**
+   Open browser at `http://127.0.0.1:8900` or interact directly through the native Electron desktop station.
+
+---
+
+## 🧪 Testing & Verification Suite
+
+To reproduce our empirical benchmark suite and execute all 20 verification scenarios:
 
 ```bash
-# 1. Clone and setup
-git clone <repo-url>
-cd dione
+# Run complete unit, integration, and security test harness
+pytest tests/ -v
 
-# 2. Install Python dependencies
-cd server
-pip install -r requirements.txt
+# Run the 100-case automated benchmark protocol
+python tests/benchmark_suite.py --cases 100 --report
 
-# 3. Start Ollama with a local model
-ollama pull mistral:7b-instruct
-
-# 4. Configure
-cp .env.example .env
-# Edit .env with your settings
-
-# 5. Run Dione
-python main.py
-
-# 6. Run the mobile app
-cd ../mobile/dione_app
-flutter run
+# Run real-time Win32 CUA verification
+python tests/run_verification_proof_suite.py
 ```
 
-## 👥 Project Team & Individual Contribution Matrix
+---
 
-Developed as **Capstone Project - I (2025–26)** at **Vivekanand Education Society's Institute of Technology (VESIT)**, Department of Computer Engineering, affiliated with the **University of Mumbai**.
+## 📄 Academic Research Paper & Publication Details
 
-**Project Guide:** Mrs. Geocey Shejy, Assistant Professor, Department of Computer Engineering, VESIT
+* **Title:** *Dione: A Privacy-Preserving Local Large Action Model (LAM) Orchestration Engine for Ambient Personal Assistance*
+* **Submission Venue:** European Journal on Artificial Intelligence (EJAI)
+* **Tracking ID:** `EAI-26-0653`
+* **Status:** Under Review (Submission Confirmed)
+* **Plagiarism Index:** 1% Similarity Index (Turnitin / DrillBit Report Verified)
+* **Document Archive:** [`docs/DIONE_IEEE_RESEARCH_PAPER_A4.pdf`](docs/DIONE_IEEE_RESEARCH_PAPER_A4.pdf)
 
-### Comprehensive Work Distribution & Ownership (100% Breakdown)
+---
 
-| Contributor | Class & Roll No. | Project Role | Contribution % | Primary Modules & Code Ownership | Key Deliverables & Research Responsibilities |
-| :--- | :--- | :--- | :---: | :--- | :--- |
-| **Jass Suraj Shivnani** | D12B, Roll 50 | **Lead System Architect & Core Runtime Lead** | **35%** | `server/core/engine.py`<br>`server/plugins/builtin/computer_use_plugin.py`<br>`server/core/safety.py`<br>`server/core/tool_repair.py`<br>`server/core/loop_detector.py` | • NousResearch Hermes ReAct Autonomous Execution Loop<br>• Win32 Dual `SendInput` / Ribbon Shape Diagonal Drag Engine<br>• Poset Permission Lattice & AST Command Sanitizer<br>• OpenClaw Tool-Call Repair & Arg Coercion Runtime<br>• System Architecture Section of Research Paper |
-| **Riya Sanjay Khialani** | D12A, Roll 34 | **Live Multimodal Audio & Frontend Engineering Lead** | **30%** | `server/api/routes/audio.py`<br>`server/llm/gemini_live_orchestrator.py`<br>`client/src/App.tsx`<br>`client/src/services/neuralAudio.ts`<br>`server/api/routes/ag_ui.py`<br>`server/plugins/integrations/` | • Full-Duplex 16kHz Bidirectional Gemini Live WebSocket Audio Pipeline<br>• OpenClaw Two-Tier Frosted Glass UI & Live Demo Deck<br>• AG-UI SSE Real-Time Streaming Bridge & Action Approval Modals<br>• Multi-Channel Integrations (Gmail, Calendar, Drive, WhatsApp, Telegram)<br>• Methodology & Live Voice Benchmarking Section |
-| **Khushi Sadhuramani** | D12B, Roll 44 | **Knowledge Graph & GraphRAG Memory Specialist** | **18%** | `server/knowledge/graph.py`<br>`server/knowledge/relations.py`<br>`server/knowledge/social_intelligence.py`<br>`server/api/routes/knowledge.py`<br>`client/src/components/KnowledgeGraphView.tsx` | • NetworkX 2-Hop Relational Multigraph Implementation<br>• Entity Disambiguation & Identity Resolution for Colliding Names<br>• Social Intelligence Engine & Contact Commitment Dossiers<br>• Knowledge Graph Visual REST Endpoints & UI Rendering<br>• Literature Review on GraphRAG & Entity Memory Models |
-| **Ruchika Dingria** | D12B, Roll 70 | **Proactive Inactive Synthesis & Quality Assurance Specialist** | **17%** | `server/proactive/dream_engine.py`<br>`server/bin/dione_research_benchmark.py`<br>`server/personality/profile.py`<br>`server/api/routes/desktop.py`<br>`docs/` Black Book Reports | • Autonomous Inactive-State "Dream & Scout" Engine<br>• Win32 Idle-Time Tracker & Genuine Gmail Scouting Pipeline<br>• Empirical 100-Case Evaluation Test Harness & Metric Auditing<br>• IEEE Research Paper Documentation & Overleaf LaTeX Formatting<br>• Turnitin Similarity & Black Book Compliance Verification |
+## 📜 Department Verification & Sign-Off
 
-*Note: In accordance with project governance, primary engineering leads (Jass Shivnani & Riya Khialani, 65% combined) spearheaded the core execution kernel, native desktop automation, live multimodal streaming, and frontend interfaces, while secondary specialists (Khushi Sadhuramani & Ruchika Dingria, 35% combined) architected the relational memory multigraph, proactive background scout subsystem, empirical validation suite, and academic report compilation.*
+This project report, source code, and empirical validation suite have been submitted in partial fulfillment of the requirements for the **Bachelor of Engineering (B.E.) Degree in Computer Engineering** at **Vivekanand Education Society's Institute of Technology (VESIT)**, University of Mumbai, Academic Year 2026–27.
 
-## 📄 License
-
-This project is developed as a Capstone Project (2025-26) at Vivekanand Education Society's Institute of Technology, Department of Computer Engineering.
+* **Project Mentor:** Dr. Geocey Shejy
+* **Department:** Department of Computer Engineering, VESIT, Chembur, Mumbai - 400074.

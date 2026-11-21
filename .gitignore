@@ -75,6 +75,9 @@ models/
 
 # Build outputs
 installer_output/
+docs/figures/Dione_Commands_Demo_Clean_Cut.mp4
+docs/figures/Dione_Full_Demo_Under100MB.mp4
+docs/figures/ui_live_captures/
 
 # External reference repos & temporary analysis
 references/
