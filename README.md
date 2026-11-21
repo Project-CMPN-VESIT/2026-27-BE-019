@@ -108,32 +108,27 @@ Benchmarked across 100 automated test scenarios on standard workstation hardware
 
 ---
 
-## 🖥️ User Interface & Operational Modules
+## 🖥️ System Architecture & Operational Modules
 
 ### 1. Sovereign Workspace & Natural Language Request Entry
-*Interactive dark-mode workspace displaying active persona state, model selection pill, and workstation activity drawer.*
-
-![Main Assistant Interface](docs/figures/report_ready_screenshots/Fig7_1a_main_chat_dashboard.png)
+* Interactive dark-mode workspace displaying active persona state, model selection pill, and workstation activity drawer.
+* Bounded reasoning loops with clear, real-time step visualization.
 
 ### 2. Dual-Tier Knowledge Graph & Episodic Memory Explorer
-*Visual entity-relationship explorer showing 97 graph nodes, 384-D vector embeddings, and 2-hop bounded subgraphs.*
-
-![Knowledge Graph Explorer](docs/figures/report_ready_screenshots/Fig7_1b_knowledge_graph_memory.png)
+* Relational graph memory preserving explicit entities, tasks, and relationships using NetworkX MultiDiGraph.
+* Dense episodic vector retrieval using ChromaDB with MiniLM-L6 embeddings.
 
 ### 3. Native Win32 Computer-Use Action & Desktop Vision
-*Real-time desktop vision with normalized 1000×1000 coordinate grid, autonomous application launching, and GDI canvas actuation.*
-
-![Computer-Use Vision Grid](docs/figures/report_ready_screenshots/Fig7_1c_computer_use_vision_grid.png)
+* Real-time desktop interaction with normalized 1000×1000 coordinate grid.
+* Autonomous application management and GDI canvas actuation via Windows native APIs.
 
 ### 4. Deterministic Safety Kernel & Permission Lattice
-*External policy supervisor enforcing 4 security tiers, system path guards (`System32`, `*.pem`, `*.env`), and hardware killswitch.*
-
-![Safety Kernel Lattice](docs/figures/report_ready_screenshots/Fig7_1h_safety_kernel_lattice.png)
+* Out-of-band policy supervisor enforcing 5 security tiers (NONE, READ, WRITE, EXECUTE, FULL).
+* Hard denial for sensitive OS boundaries (`System32`, registry, credential stores) and explicit confirmation modals.
 
 ### 5. Multi-Turn Execution & Live Hardware Telemetry
-*ReAct execution showing live system telemetry query (Windows 11, Intel 8-core, NVIDIA RTX 3050 Ti Laptop GPU).*
-
-![System Telemetry Execution](docs/figures/report_ready_screenshots/Fig7_1e_live_capstone_query_telemetry.png)
+* Continuous hardware status monitoring (CPU, RAM, Disk, GPU VRAM) integrated into agent context.
+* Graceful fallback across local quantized models (Ollama) and cloud APIs.
 
 ---
 
