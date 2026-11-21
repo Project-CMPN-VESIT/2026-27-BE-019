@@ -46,8 +46,8 @@ backup_pre_upgrade/
 Thumbs.db
 desktop.ini
 
-# Flutter
-mobile/dione_app/build/
+# Mobile (Unused Flutter Scaffold)
+mobile/
 mobile/dione_app/.dart_tool/
 mobile/dione_app/.packages
 mobile/dione_app/.flutter-plugins

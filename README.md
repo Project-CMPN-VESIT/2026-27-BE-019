@@ -3,7 +3,6 @@
 [![University of Mumbai](https://img.shields.io/badge/University_of_Mumbai-VESIT_CMPN-blue.svg)](https://vesit.ves.ac.in/)
 [![Capstone Project II](https://img.shields.io/badge/Capstone_Project-Group_19_(A.Y._2026--27)-purple.svg)]()
 [![Paper Submitted](https://img.shields.io/badge/Paper_Submission-European_Journal_on_AI_(EAI--26--0653)-success.svg)]()
-[![Similarity Index](https://img.shields.io/badge/Turnitin_Similarity-1%25_Verified-brightgreen.svg)]()
 [![Tests](https://img.shields.io/badge/Verification_Tests-20%2F20_Passed-emerald.svg)]()
 
 > **Department of Computer Engineering**  
@@ -27,20 +26,20 @@
 
 ## 📋 Official CMPN Department Deliverables Index
 
-In accordance with the Project CMPN Capstone Examination Guidelines, all mandatory project artifacts are archived within this repository:
+In accordance with the Project CMPN Capstone Examination Guidelines, all mandatory project artifacts are accessible within this repository:
 
 | # | Deliverable | Location in Repository | Description |
 | :-: | :--- | :--- | :--- |
-| **1** | **Final Working System / Product** | [`server/`](server/) & [`client/`](client/) | Full-stack FastAPI backend + React VisionOS Electron workstation station |
+| **1** | **Final Working System / Product** | [`server/`](server/) & [`client/`](client/) | Full-stack FastAPI backend + React Sovereign Workspace workstation |
 | **2** | **Source Code with Version History** | [GitHub Commit History](../../commits/main) | Verified Git commit history spanning design, implementation, and evaluation |
 | **3** | **Testing & Validation Report** | [`docs/DIONE_OFFICIAL_100_CASE_EVALUATION_REPORT.md`](docs/DIONE_OFFICIAL_100_CASE_EVALUATION_REPORT.md) | 100-case automated test suite, tool failure recoveries, and boundary audits |
 | **4** | **Performance Analysis & Result Report** | [`docs/DIONE_100PCT_REAL_END_TO_END_EVALUATION.md`](docs/DIONE_100PCT_REAL_END_TO_END_EVALUATION.md) | Empirical latency, memory consumption, token reduction, and recall statistics |
 | **5** | **Deployment Report & User Manual** | [`docs/SETUP.md`](docs/SETUP.md) & [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Workstation requirements, dependency matrix, and step-by-step setup guide |
-| **6** | **Research Paper & Publication Proof** | [`docs/DIONE_IEEE_RESEARCH_PAPER_A4.pdf`](docs/DIONE_IEEE_RESEARCH_PAPER_A4.pdf) | Submitted to *European Journal on AI* (ID: `EAI-26-0653`); 1% Turnitin Index |
-| **7** | **Final Black Book Report** | [`docs/Dione_Capstone_Blackbook_Final_Verified.docx`](docs/Dione_Capstone_Blackbook_Final_Verified.docx) | Complete Capstone-II Black Book (Chapters 1 to 8 + Front Matter + Appendix I) |
-| **8** | **Presentation Slides** | [`docs/Dione_Review2_Presentation.pptx`](docs/Dione_Review2_Presentation.pptx) | Oral examination slide deck with architecture diagrams and telemetry charts |
-| **9** | **Demonstration Video** | [`docs/figures/Dione_AI_Capstone_Demo_v2_Voiceover.mp4`](docs/figures/Dione_AI_Capstone_Demo_v2_Voiceover.mp4) | Timecoded 1m 35s HD demonstration video with studio-grade neural voiceover |
-| **10** | **Plagiarism & AI Verification** | [`docs/DIONE_TURNITIN_SIMILARITY_REPORT_A4.pdf`](docs/DIONE_TURNITIN_SIMILARITY_REPORT_A4.pdf) | DrillBit / Turnitin certified report (1% similarity, 0% AI detection) |
+| **6** | **Research Paper / Publication** | [`docs/DIONE_IEEE_RESEARCH_PAPER_A4.pdf`](docs/DIONE_IEEE_RESEARCH_PAPER_A4.pdf) | IEEE formatted paper submitted to *European Journal on AI* (ID: `EAI-26-0653`) |
+| **7** | **Final Capstone Project Blackbook Report** | [`docs/Dione_Capstone_Blackbook_Final_Verified.docx`](docs/Dione_Capstone_Blackbook_Final_Verified.docx) | Complete Capstone-II Black Book (Chapters 1 to 8 + Front Matter + Appendix I) |
+| **8** | **Presentation Slides** | [`docs/presentation/Capstone Review I.pptx`](docs/presentation/Capstone%20Review%20I.pptx) | Oral examination slide deck with architecture diagrams and telemetry charts |
+| **9** | **Poster & Demonstration Video** | [`docs/figures/Dione_AI_Capstone_Demo_v2_Voiceover.mp4`](docs/figures/Dione_AI_Capstone_Demo_v2_Voiceover.mp4) | Timecoded 1m 35s HD demonstration video with studio neural voiceover & figures |
+| **10** | **Project Logbook** | [`docs/PROJECT_LOGBOOK.md`](docs/PROJECT_LOGBOOK.md) | Verified project logbook recording semester sprint milestones and mentor sign-offs |
 
 ---
 
@@ -103,7 +102,7 @@ Benchmarked across 100 automated test scenarios on standard workstation hardware
 │ Prompt-Token Reduction (Graph) │ ~75%              │ Vanilla Context   │
 │ Safety Policy Enforcement      │ 100% Interception │ 0 Bypasses        │
 │ Unit & Integration Test Suite  │ 20 / 20 Passed    │ 100% Pass Rate    │
-│ Turnitin Similarity Index      │ 1% Verified       │ < 15% Standard    │
+│ Action Success Rate (ReAct)   │ 94.0%             │ Industry Standard │
 └────────────────────────────────┴───────────────────┴───────────────────┘
 ```
 
@@ -210,7 +209,7 @@ python tests/run_verification_proof_suite.py
 * **Submission Venue:** European Journal on Artificial Intelligence (EJAI)
 * **Tracking ID:** `EAI-26-0653`
 * **Status:** Under Review (Submission Confirmed)
-* **Plagiarism Index:** 1% Similarity Index (Turnitin / DrillBit Report Verified)
+* **Paper Format:** IEEE Transactions on Emerging Topics in Computing (Double-Column, A4)
 * **Document Archive:** [`docs/DIONE_IEEE_RESEARCH_PAPER_A4.pdf`](docs/DIONE_IEEE_RESEARCH_PAPER_A4.pdf)
 
 ---
